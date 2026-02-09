@@ -19,11 +19,6 @@
     ((type *)((char *)(ptr) - offsetof(type, member)))
 #endif
 
-
-// 调试日志，可以替换为您自己的日志系统
-// #define BUTTON_LOGE(format, ...) printf("[BTN_E] " format "\r\n", ##__VA_ARGS__)
-// #define BUTTON_LOGI(format, ...) printf("[BTN_I] " format "\r\n", ##__VA_ARGS__)
-
 // 临界区保护
 #define BUTTON_ENTER_CRITICAL()           taskENTER_CRITICAL()
 #define BUTTON_EXIT_CRITICAL()            taskEXIT_CRITICAL()
@@ -75,7 +70,7 @@ typedef struct button_dev_t {
     uint32_t short_press_ticks;
     uint32_t long_press_hold_cnt;
     uint8_t repeat;
-    uint8_t state: 3;
+    uint8_t state       : 3;
     uint8_t debounce_cnt: 4;
     uint8_t button_level: 1;
     button_event_t event;
@@ -100,7 +95,7 @@ static uint8_t button_gpio_get_level(button_dev_t *btn);
 // 回调宏
 #define CALL_EVENT_CB(ev)                                                   \
     if (btn->cb_info[ev]) {                                                 \
-        for (int i = 0; i < btn->size[ev]; i++) {                           \
+        for (int i = 0; i < (int)btn->size[ev]; i++) {                           \
             if(btn->cb_info[ev][i].cb) {                                    \
                  btn->cb_info[ev][i].cb(btn, btn->cb_info[ev][i].usr_data);  \
             }                                                               \
