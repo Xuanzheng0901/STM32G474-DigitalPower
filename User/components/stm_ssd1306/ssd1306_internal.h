@@ -13,6 +13,7 @@
 #define SSD1306_CMD_SET_CHARGE_PUMP       0x8D
 #define SSD1306_CMD_MIRROR_X_OFF          0xA0
 #define SSD1306_CMD_MIRROR_X_ON           0xA1
+#define SSD1306_CMD_ENTIRE_DISP_OFF       0xA4
 #define SSD1306_CMD_INVERT_OFF            0xA6
 #define SSD1306_CMD_INVERT_ON             0xA7
 #define SSD1306_CMD_SET_MULTIPLEX         0xA8
@@ -20,7 +21,10 @@
 #define SSD1306_CMD_DISP_ON               0xAF
 #define SSD1306_CMD_MIRROR_Y_OFF          0xC0
 #define SSD1306_CMD_MIRROR_Y_ON           0xC8
+#define SSD1306_CMD_SET_DISP_CLOCK_DIV    0xD5
+#define SSD1306_CMD_SET_PRECHARGE         0xD9
 #define SSD1306_CMD_SET_COMPINS           0xDA
+#define SSD1306_CMD_SET_VCOM_DESELECT     0xDB
 
 #define SSD1306_HEIGHT 64
 #define SSD1306_WIDTH 128
