@@ -11,9 +11,9 @@ lv_anim_t focus_anim;
 bool is_animating = false;
 
 static const focus_anim_config_t anim_config = {
-    .spinbox_x = 34,
-    .spinbox_width = 35,
-    .spinbox1_x = 91,
+    .spinbox_x      = 34,
+    .spinbox_width  = 35,
+    .spinbox1_x     = 91,
     .spinbox1_width = 29
 };
 

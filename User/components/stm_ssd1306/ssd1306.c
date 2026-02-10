@@ -11,8 +11,7 @@ void ssd1306_init(void)
     ssd1306_tx_cmd(SSD1306_CMD_DISP_OFF, NULL, 0);
 
     // 3. 基础配置
-    // 设置寻址模式为“页寻址模式”，以匹配 LVGL 缓冲区的转换逻辑
-    ssd1306_tx_cmd(SSD1306_CMD_SET_MEMORY_ADDR_MODE, (uint8_t[]){0x00}, 1); //Page Addressing Mode
+    ssd1306_tx_cmd(SSD1306_CMD_SET_MEMORY_ADDR_MODE, (uint8_t[]){0x00}, 1); // 页寻址模式
 
     // 设置屏幕尺寸和 COM 引脚配置
     ssd1306_tx_cmd(SSD1306_CMD_SET_MULTIPLEX, (uint8_t[]){SSD1306_HEIGHT - 1}, 1);

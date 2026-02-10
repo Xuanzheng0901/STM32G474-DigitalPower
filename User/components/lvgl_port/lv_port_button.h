@@ -15,9 +15,6 @@
 #ifdef __cplusplus
 extern "C"
 {
-
-
-
 #endif
 
 // 按钮状态定义

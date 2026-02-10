@@ -70,18 +70,18 @@ static void indev_init(void)
     button_config_t btn_cfg = {0};
     button_gpio_config_t gpio_cfg = {
         .active_level = 0,
-        .port = GPIOB,
-        .pin = GPIO_PIN_5
+        .port         = GPIOB,
+        .pin          = GPIO_PIN_5
     };
     iot_button_create_gpio(&btn_cfg, &gpio_cfg, &btn_handle);
 
     knob_config_t knob_cfg = {
         .default_direction = 0,
-        .htim = &htim2,
+        .htim              = &htim2,
     };
     lvgl_port_encoder_cfg_t encoder_cfg = {
-        .disp = lv_display_get_default(),
-        .encoder_a_b = &knob_cfg,
+        .disp          = lv_display_get_default(),
+        .encoder_a_b   = &knob_cfg,
         .encoder_enter = btn_handle
     };
     indev = lvgl_port_add_encoder(&encoder_cfg);

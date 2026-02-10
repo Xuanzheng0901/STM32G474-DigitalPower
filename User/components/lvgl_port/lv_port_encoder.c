@@ -21,7 +21,7 @@ typedef struct {
     int32_t diff;
 } lvgl_port_encoder_ctx_t;
 
-static void lvgl_port_encoder_read(lv_indev_t *indev_drv, lv_indev_data_t *data);
+static void lvgl_port_encoder_read(lv_indev_t * indev_drv, lv_indev_data_t * data);
 
 static void lvgl_port_encoder_btn_down_handler(button_handle_t button_handle, void *usr_data);
 

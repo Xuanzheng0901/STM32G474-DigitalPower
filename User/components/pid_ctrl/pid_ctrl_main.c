@@ -103,14 +103,14 @@ void pid_ctrl_init(void)
 {
     pid_ctrl_config_t pid_cfg = {
         .init_param = {
-            .kp = 0.05f,
-            .ki = 0.02f,
-            .kd = 0.0f,
-            .max_output = 40000.0f,
-            .min_output = 0.0f,
+            .kp           = 0.05f,
+            .ki           = 0.02f,
+            .kd           = 0.0f,
+            .max_output   = 40000.0f,
+            .min_output   = 0.0f,
             .max_integral = 10000.0f,
             .min_integral = -10000.0f,
-            .cal_type = PID_CAL_TYPE_INCREMENTAL,
+            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
         }
     };
     pid_new_control_block(&pid_cfg, &pid_handle);

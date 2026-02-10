@@ -1,8 +1,3 @@
-/**
- * @file lv_port_disp_template.h
- *
- */
-
 #ifndef LV_PORT_DISP_TEMPL_H
 #define LV_PORT_DISP_TEMPL_H
 
@@ -24,10 +19,10 @@
  *      TYPEDEFS
  **********************/
 typedef struct {
- lv_coord_t spinbox_x;
- lv_coord_t spinbox_width;
- lv_coord_t spinbox1_x;
- lv_coord_t spinbox1_width;
+    lv_coord_t spinbox_x;
+    lv_coord_t spinbox_width;
+    lv_coord_t spinbox1_x;
+    lv_coord_t spinbox1_width;
 } focus_anim_config_t;
 
 /**********************

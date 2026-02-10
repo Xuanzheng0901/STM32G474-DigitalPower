@@ -232,14 +232,14 @@ static void button_handler(button_dev_t *btn)
 {
     uint8_t read_gpio_level = button_gpio_get_level(btn);
 
-    if((btn->state) > 0)
+    if(btn->state > 0)
     {
         btn->ticks++;
     }
 
     if(read_gpio_level != btn->button_level)
     {
-        if(++(btn->debounce_cnt) >= DEBOUNCE_TICKS)
+        if(++btn->debounce_cnt >= DEBOUNCE_TICKS)
         {
             btn->button_level = read_gpio_level;
             btn->debounce_cnt = 0;
@@ -466,7 +466,7 @@ uint32_t iot_button_get_ticks_time(button_handle_t btn_handle)
 {
     if(!btn_handle)
         return 0;
-    return (((button_dev_t *)btn_handle)->ticks * TICKS_INTERVAL);
+    return ((button_dev_t *)btn_handle)->ticks * TICKS_INTERVAL;
 }
 
 uint16_t iot_button_get_long_press_hold_cnt(button_handle_t btn_handle)
@@ -485,10 +485,12 @@ int iot_button_set_param(button_handle_t btn_handle, button_param_t param, void 
     switch(param)
     {
         case BUTTON_LONG_PRESS_TIME_MS:
-            btn->long_press_ticks = (uint32_t)(intptr_t)value / TICKS_INTERVAL;
+            btn->long_press_ticks = (uint32_t)(intptr_t)
+                                    value / TICKS_INTERVAL;
             break;
         case BUTTON_SHORT_PRESS_TIME_MS:
-            btn->short_press_ticks = (uint32_t)(intptr_t)value / TICKS_INTERVAL;
+            btn->short_press_ticks = (uint32_t)(intptr_t)
+                                     value / TICKS_INTERVAL;
             break;
         default:
             break;
