@@ -7,9 +7,6 @@
 #ifndef G474_1_LOG_H
 #define G474_1_LOG_H
 
-#include <stdio.h>
-#include <stdarg.h>
-
 typedef enum {
     LOG_NONE, /* 不输出 */
     LOG_ERROR, /* 错误 (Red) */

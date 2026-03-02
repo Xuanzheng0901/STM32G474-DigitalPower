@@ -1,11 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h> // 需要 abs()
 #include "FreeRTOS.h"
 #include "task.h"
 #include "timers.h"
 #include "lv_port_knob.h"
-#include <stdbool.h>
 
 #define CONFIG_KNOB_PERIOD_TIME_MS      (15)
 #define KNOB_ECODER_RESOLUTION          (2) // 2次脉冲计数

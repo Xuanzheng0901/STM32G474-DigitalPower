@@ -22,10 +22,11 @@ static uint32_t voltage_to_duty(float expect_mV)
         return 0;
 
     float denominator = expect_mV + INPUT_VOLTAGE_MV;
-    float duty_cycle = 0.0f;
 
-    if(denominator > 1.0f)
-        duty_cycle = expect_mV / denominator;
+    if(denominator < 1.0f)
+        denominator = 1.0f;
+
+    float duty_cycle = expect_mV / denominator;
 
     // 硬件保护
     if(duty_cycle > MAX_DUTY_RATIO)
@@ -36,7 +37,7 @@ static uint32_t voltage_to_duty(float expect_mV)
 
 void pwm_set_duty(uint32_t pwm_duty)
 {
-    hhrtim1.Instance->sTimerxRegs[4].CMP1CxR = pwm_duty;
+    hhrtim1.Instance->sTimerxRegs[TIMER_E].CMP1CxR = pwm_duty;
 }
 
 float get_voltage_value(uint8_t index)
@@ -61,17 +62,20 @@ static void PID_ctrl_routine(void *pvParameters)
 
     while(1)
     {
+        //1. 等待ADC数据
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) == pdTRUE)
         {
+            //2. 查询target是否改变
             if(pdPASS == xQueueReceive(pid_ctrl_queue_mV, &target_voltage_buffer_mV, 0))
             {
                 if(target_voltage_mV != target_voltage_buffer_mV)
                 {
                     target_voltage_mV = target_voltage_buffer_mV;
-                    pid_reset_ctrl_block(pid_handle);
+                    // pid_reset_ctrl_block(pid_handle); //使用增量式pid更改target后不能重置
                 }
             }
 
+            //3. 计算实际电压/电流
             float origin_voltage_sum = 0.0f, origin_current_sum = 0.0f;
             for(uint8_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
             {
@@ -82,8 +86,9 @@ static void PID_ctrl_routine(void *pvParameters)
             now_voltage_mV = origin_voltage_sum / (ADC_BUFFER_LENGTH / 2) / 4095.0f * 3300.0f * 20;
             now_current_A = origin_current_sum / (ADC_BUFFER_LENGTH / 2) / 4095.0f * 3300.0f * 2 / 1000; //单位A
 
-            // float error_mV = (float)target_voltage_mV - now_voltage_mV;
-            //
+            //4. 进行pid计算
+            float error_mV = (float)target_voltage_mV - now_voltage_mV;
+
             // pid_compute(pid_handle, error_mV, &next_output_voltage_mV);
             // uint32_t output_duty = voltage_to_duty(next_output_voltage_mV);
             // pwm_set_duty(output_duty);
@@ -105,11 +110,11 @@ void pid_ctrl_init(void)
         .init_param = {
             .kp           = 0.05f,
             .ki           = 0.02f,
-            .kd           = 0.0f,
-            .max_output   = 40000.0f,
+            .kd           = 0.005f,
+            .max_output   = 50000.0f,
             .min_output   = 0.0f,
-            .max_integral = 10000.0f,
-            .min_integral = -10000.0f,
+            .max_integral = 2000.0f,
+            .min_integral = -2000.0f,
             .cal_type     = PID_CAL_TYPE_INCREMENTAL,
         }
     };

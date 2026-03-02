@@ -10,7 +10,7 @@ set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 set(CMAKE_BUILD_TYPE "Debug")
 
-add_compile_options(-Wall -Wextra)
+#add_compile_options(-Wall -Wextra)
 
 project(G474_1 C ASM)
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

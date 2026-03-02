@@ -9,7 +9,6 @@
 #define STM32_BUTTON_H
 
 #include <stdint.h>
-#include <stddef.h>
 #include "main.h" // 包含你的 STM32 HAL 库主头文件
 
 #ifdef __cplusplus

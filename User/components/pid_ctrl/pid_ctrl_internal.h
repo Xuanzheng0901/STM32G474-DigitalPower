@@ -3,6 +3,16 @@
 #include "stdio.h"
 #include "sys/param.h"
 #include "stm32g4xx_hal.h"
+
+typedef enum {
+    TIMER_A = 0,
+    TIMER_B,
+    TIMER_C,
+    TIMER_D,
+    TIMER_E,
+    TIMER_F,
+} hrtim_timer_t;
+
 /**
  * @brief PID calculation type
  *

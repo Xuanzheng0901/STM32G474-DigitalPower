@@ -1,4 +1,5 @@
 #include "ssd1306_internal.h"
+#include "spi.h"
 
 #ifdef SSD1306_USE_SPI
 

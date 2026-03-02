@@ -1,9 +1,7 @@
 #ifndef G474_1_SSD1306_INTERNAL_H
 #define G474_1_SSD1306_INTERNAL_H
 
-#include "spi.h"
-#include "stdio_ext.h"
-#include "gpio.h"
+#include "main.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -29,7 +27,7 @@
 #define SSD1306_HEIGHT 64
 #define SSD1306_WIDTH 128
 
-#define FULL_FLUSH_BUFFER_SIZE  SSD1306_WIDTH * SSD1306_HEIGHT / 8
+#define FULL_FLUSH_BUFFER_SIZE  (SSD1306_WIDTH * SSD1306_HEIGHT / 8)
 
 #define SSD1306_USE_SPI
 //#define SSD1306_USE_IIC

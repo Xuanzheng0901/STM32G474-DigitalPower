@@ -1,9 +1,7 @@
 #include "adc.h"
 #include "FreeRTOS.h"
 #include "main.h"
-#include "queue.h"
 #include "task.h"
-#include "usart.h"
 #include "stdio_ext.h"
 #include "string.h"
 #include "hrtim.h"
@@ -23,6 +21,7 @@ void LED_task0(void *arg)
 
 void app_main(void)
 {
+    printf("helloworld\n");
     xTaskCreate(LED_task0, "LED", 128, NULL, 10, NULL);
     HAL_HRTIM_WaveformCounterStart(&hhrtim1, HRTIM_TIMERID_TIMER_E);
     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TE1 | HRTIM_OUTPUT_TE2);

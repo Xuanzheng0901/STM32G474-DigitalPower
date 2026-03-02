@@ -11,14 +11,6 @@
 #include <stdint.h>
 #include "main.h" // 包含你的 STM32 HAL 库主头文件
 
-#ifdef __cplusplus
-extern "C"
-{
-
-
-
-#endif
-
 typedef void (*knob_cb_t)(void *knob_handle, void *usr_data);
 
 typedef void *knob_handle_t;
@@ -61,9 +53,5 @@ int32_t iot_knob_get_count_value(knob_handle_t knob_handle);
 
 // 清除计数值
 int32_t iot_knob_clear_count_value(knob_handle_t knob_handle);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // STM32_KNOB_H
