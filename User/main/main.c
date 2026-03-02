@@ -7,6 +7,7 @@
 #include "hrtim.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
+#include "spi.h"
 
 extern TaskHandle_t adc_task_handle;
 
@@ -21,7 +22,7 @@ void LED_task0(void *arg)
 
 void app_main(void)
 {
-    printf("helloworld\n");
+    // printf("helloworld\n");
     xTaskCreate(LED_task0, "LED", 128, NULL, 10, NULL);
     HAL_HRTIM_WaveformCounterStart(&hhrtim1, HRTIM_TIMERID_TIMER_E);
     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TE1 | HRTIM_OUTPUT_TE2);
