@@ -141,7 +141,7 @@ static void home_page_init(void)
 
         //电压调整框
         voltage_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(voltage_spinbox, 200, 2500);
+        lv_spinbox_set_range(voltage_spinbox, 0, 2500);
         lv_spinbox_set_digit_format(voltage_spinbox, 4, 2);
         lv_spinbox_set_step(voltage_spinbox, 1);
 
