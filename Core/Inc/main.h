@@ -61,12 +61,18 @@ void pid_ctrl_init(void);
 /* Private defines -----------------------------------------------------------*/
 #define Handle1 hhrtim1
 #define PWM_Period 54400
-#define SPI_RESET_Pin GPIO_PIN_4
-#define SPI_RESET_GPIO_Port GPIOA
-#define SPI_DC_Pin GPIO_PIN_6
-#define SPI_DC_GPIO_Port GPIOA
-#define SPI_CS_Pin GPIO_PIN_4
-#define SPI_CS_GPIO_Port GPIOC
+#define LED_Pin GPIO_PIN_0
+#define LED_GPIO_Port GPIOC
+#define SPI1_RESET_Pin GPIO_PIN_4
+#define SPI1_RESET_GPIO_Port GPIOA
+#define SPI1_DC_Pin GPIO_PIN_6
+#define SPI1_DC_GPIO_Port GPIOA
+#define SPI3_DC_Pin GPIO_PIN_0
+#define SPI3_DC_GPIO_Port GPIOD
+#define SPI3_RESET_Pin GPIO_PIN_1
+#define SPI3_RESET_GPIO_Port GPIOD
+#define Encoder_key_Pin GPIO_PIN_5
+#define Encoder_key_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 void app_main(void);
