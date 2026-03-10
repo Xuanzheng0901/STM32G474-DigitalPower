@@ -10,6 +10,8 @@
 #include <string.h>
 #include "lv_port_encoder.h"
 #include <stdio.h>
+#include "FreeRTOS.h"
+#include "timers.h"
 
 #define LVGL_PORT_LOGE(format, ...) printf("[LVGL_PORT_E] " format "\r\n", ##__VA_ARGS__)
 
@@ -20,6 +22,16 @@ typedef struct {
     bool btn_enter;
     int32_t diff;
 } lvgl_port_encoder_ctx_t;
+
+static bool s_is_rotated = false;
+static int8_t direction = -1; // -1 表示无效方向
+static TimerHandle_t s_knob_timer_handle;
+
+void iot_knob_auto_clean(TimerHandle_t xTimer)
+{
+    s_is_rotated = false;
+    direction = -1;
+}
 
 static void lvgl_port_encoder_read(lv_indev_t *indev_drv, lv_indev_data_t *data);
 
@@ -54,6 +66,11 @@ lv_indev_t *lvgl_port_add_encoder(const lvgl_port_encoder_cfg_t *encoder_cfg)
         }
         iot_knob_register_cb(encoder_ctx->knob_handle, KNOB_LEFT, lvgl_port_knob_event_handler, encoder_ctx);
         iot_knob_register_cb(encoder_ctx->knob_handle, KNOB_RIGHT, lvgl_port_knob_event_handler, encoder_ctx);
+        s_knob_timer_handle = xTimerCreate("knob_auto_clean",
+                                           pdMS_TO_TICKS(50),
+                                           pdFALSE,
+                                           NULL,
+                                           iot_knob_auto_clean);
     }
 
     // 注册按键回调
@@ -129,13 +146,10 @@ static void lvgl_port_encoder_btn_up_handler(button_handle_t button_handle, void
 //  ******************************************************************
 static void lvgl_port_knob_event_handler(void *arg, void *usr_data)
 {
-    static bool s_is_rotated = false;
-    static int8_t direction = -1; // -1 表示无效方向
-
     lvgl_port_encoder_ctx_t *ctx = (lvgl_port_encoder_ctx_t *)usr_data;
     knob_handle_t knob = (knob_handle_t)arg;
     knob_event_t evt = iot_knob_get_event(knob);
-    printf("KNOB ROTATED: %d\r\n", evt);
+    // printf("KNOB ROTATED: %d\r\n", evt);
     // 只关心左右旋转事件
     if(evt != KNOB_LEFT && evt != KNOB_RIGHT)
     {
@@ -147,6 +161,7 @@ static void lvgl_port_knob_event_handler(void *arg, void *usr_data)
         // 这是物理转动的第一步
         s_is_rotated = true;
         direction = evt;
+        xTimerReset(s_knob_timer_handle, 0);
     }
     else
     {
@@ -155,7 +170,8 @@ static void lvgl_port_knob_event_handler(void *arg, void *usr_data)
         {
             // 如果两次方向一致，说明是一次有效的转动，更新 diff
             ctx->diff = (evt == KNOB_LEFT) ? -1 : 1;
-
+            xTimerStop(s_knob_timer_handle, 0);
+            // printf("KNOB EVT: %d\n", evt);
             // 在 STM32 端口中, LVGL 任务通常由 osDelay 驱动的循环处理。
             // ctx->diff 的更新会在下一次 lv_task_handler 调用时被 lvgl_port_encoder_read 读取。
             // 不需要像 ESP-IDF 那样显式唤醒任务。
