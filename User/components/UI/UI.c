@@ -5,7 +5,7 @@
 #include "task.h"
 #include "lv_port_encoder.h"
 #include "tim.h"
-#include "PID.h"
+#include "mppt.h"
 
 extern lv_obj_t *highlight_frame;
 extern lv_anim_t focus_anim;
@@ -30,7 +30,7 @@ static void lvgl_event_cb(lv_event_t *evt)
     // // ESP_LOGI(TAG, "Value changed: %ld", value);
     if(lv_event_get_current_target(evt) == voltage_spinbox)
     {
-        pid_set_voltage(value * 10);
+        // pid_set_voltage(value * 10);
         // snprintf(value_buf[0], 32, "%ld", value);
         // lv_obj_invalidate(voltage_label);
     }
