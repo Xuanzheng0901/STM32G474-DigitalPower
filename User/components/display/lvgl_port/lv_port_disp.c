@@ -5,13 +5,10 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
+#include "display.h"
 #include "../stm_ssd1306/ssd1306.h"
 
-#define DISP_HOR_RES    128
-#define DISP_VER_RES    64
-#define DISP_BUF_SIZE   (DISP_HOR_RES * DISP_VER_RES / 8 + 8)
-
-static void disp_init(void);
+static void lv_disp_init(void);
 
 static void disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 
@@ -20,9 +17,9 @@ volatile bool disp_flush_enabled = true;
 static uint8_t disp_buf1[DISP_BUF_SIZE];
 static uint8_t disp_buf2[DISP_BUF_SIZE];
 
-static void disp_init(void)
+void lv_disp_init(void)
 {
-    ssd1306_init();
+    display_init();
 }
 
 void disp_enable_update(void)
@@ -51,37 +48,75 @@ static void disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
         return;
     }
 
-    uint8_t *pos = px_map + 8;
-    static uint8_t ssd1306_buffer[128 * 8] = {0};
-    memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+    uint8_t *pos = px_map + 8; // LVGL绘图缓冲区首8字节为信息
+    static uint8_t convert_buffer[DISP_BUF_SIZE - 8];
 
-    /* 转换格式：水平扫描 → 垂直页模式 */
-    for(uint16_t y = 0; y < DISP_VER_RES; y++)
+    uint16_t stride = DISP_HOR_RES / 8; // LVGL 每行的字节数
+    uint16_t pages = DISP_VER_RES / 8;  // OLED 的页数
+
+    for(uint16_t page = 0; page < pages; page++)
     {
-        for(uint16_t x = 0; x < DISP_HOR_RES; x++)
+        for(uint16_t col = 0; col < stride; col++)
         {
-            /* 从 LVGL 缓冲区读取像素 (MSB 优先) */
-            uint32_t src_byte_idx = (y * DISP_HOR_RES + x) >> 3;
-            uint8_t src_bit_offset = x % 8;
-            uint8_t pixel = (pos[src_byte_idx] >> (7 - src_bit_offset)) & 0x01;
-
-            /* 写入 SSD1306 缓冲区（页模式）*/
-            if(pixel)
+            // 1. 定位到 LVGL 缓冲区中这个 8x8 像素块的起始地址
+            uint8_t *src = &pos[(page * 8) * stride + col];
+            uint8_t b[8];
+            // 连续读取 8 行的数据（即这个 8x8 方块的 8 个字节）
+            for(uint8_t i = 0; i < 8; i++)
             {
-                // 这部分逻辑是完美正确的
-                uint16_t page = y >> 3;
-                uint8_t bit = y % 8;
-                uint32_t dst_idx = page * DISP_HOR_RES + x;
-                ssd1306_buffer[dst_idx] |= (1 << bit);
+                b[i] = src[i * stride];
+            }
+
+            // 2. 定位到目标转换缓冲区的写入地址
+            // page 决定是大行，col * 8 决定在这页的第几个水平像素
+            uint8_t *dst = &convert_buffer[page * DISP_HOR_RES + col * 8];
+
+            // 3. 开始执行 8x8 矩阵转置
+            for(uint8_t i = 0; i < 8; i++)
+            {
+                // 提取源字节的对应列 (从左到右: MSB -> LSB)
+                uint8_t mask = 0x80 >> i;
+                uint8_t out_byte = 0;
+
+                // 拼装成目标字节 (LSB在最上: b0 -> b7)
+                for(uint8_t j = 0; j < 8; j++)
+                {
+                    if(b[j] & mask)
+                        out_byte |= 0x01 << j;
+                }
+
+                // 4. 直接赋值（彻底免去先memset后|=的操作）
+                dst[i] = out_byte;
             }
         }
     }
-
-    ssd1306_draw(ssd1306_buffer);
+    // 绘制到屏幕 (DMA 发送)
+    display_draw(convert_buffer);
 
     /* 通知 LVGL 刷新完成 */
     lv_display_flush_ready(disp);
 }
+
+/*
+ *  lvgl渲染出来的buffer:
+ *  <--   0th   byte    --> <--   1st    byte   -->
+ *   0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+ *
+ *  我们需要的缓冲区:
+ *  <--   0th   byte    -->
+ *   0  8 16 24 32 40 48 56 ...
+ *  <--   1st   byte    -->
+ *   1  9 17
+ *   2 10
+ *   3 11
+ *   4 12
+ *   5 13
+ *   6 14
+ *   7 15
+ *
+ *  所以需要进行转换
+ */
+
 
 bool lvgl_port_lock(uint32_t timeout_ms)
 {
@@ -120,7 +155,7 @@ void lvgl_task(void *pvParameters)
 
 void lv_port_disp_init(void)
 {
-    disp_init();
+    lv_disp_init();
 
     xGuiSemaphore = xSemaphoreCreateMutex();
     lv_init();
@@ -129,5 +164,8 @@ void lv_port_disp_init(void)
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_I1);
     lv_display_set_buffers(disp, disp_buf1, disp_buf2, DISP_BUF_SIZE, LV_DISPLAY_RENDER_MODE_DIRECT); // 双全缓冲模式
     lv_display_set_flush_cb(disp, disp_flush);
-    xTaskCreate(lvgl_task, "LVGL", 1024, NULL, 6, NULL);
+
+    xTaskCreate(lvgl_task, "LVGL", 1024, NULL,
+                6, NULL
+    );
 }
