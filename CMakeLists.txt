@@ -23,7 +23,7 @@ add_subdirectory(cmake/stm32cubemx)
 # --- LVGL Configuration ---
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "Disable demos" FORCE)
-set(LV_BUILD_CONF_PATH "${CMAKE_SOURCE_DIR}/User/components/lvgl_port/lv_conf.h" CACHE PATH "Path to lv_conf.h" FORCE)
+set(LV_BUILD_CONF_PATH "${CMAKE_SOURCE_DIR}/User/components/display/lvgl_port/lv_conf.h" CACHE PATH "Path to lv_conf.h" FORCE)
 add_subdirectory(lvgl)
 target_link_libraries(lvgl PRIVATE stm32cubemx) # LVGL 需要依赖 STM32 的库 (FreeRTOS, HAL等)
 

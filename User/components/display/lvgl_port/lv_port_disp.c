@@ -5,13 +5,10 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
+#include "display.h"
 #include "../stm_ssd1306/ssd1306.h"
 
-#define DISP_HOR_RES    128
-#define DISP_VER_RES    64
-#define DISP_BUF_SIZE   (DISP_HOR_RES * DISP_VER_RES / 8 + 8)
-
-static void disp_init(void);
+static void lv_disp_init(void);
 
 static void disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 
@@ -20,9 +17,9 @@ volatile bool disp_flush_enabled = true;
 static uint8_t disp_buf1[DISP_BUF_SIZE];
 static uint8_t disp_buf2[DISP_BUF_SIZE];
 
-static void disp_init(void)
+void lv_disp_init(void)
 {
-    ssd1306_init();
+    display_init();
 }
 
 void disp_enable_update(void)
@@ -120,7 +117,7 @@ void lvgl_task(void *pvParameters)
 
 void lv_port_disp_init(void)
 {
-    disp_init();
+    lv_disp_init();
 
     xGuiSemaphore = xSemaphoreCreateMutex();
     lv_init();
@@ -129,5 +126,8 @@ void lv_port_disp_init(void)
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_I1);
     lv_display_set_buffers(disp, disp_buf1, disp_buf2, DISP_BUF_SIZE, LV_DISPLAY_RENDER_MODE_DIRECT); // 双全缓冲模式
     lv_display_set_flush_cb(disp, disp_flush);
-    xTaskCreate(lvgl_task, "LVGL", 1024, NULL, 6, NULL);
+
+    xTaskCreate(lvgl_task, "LVGL", 1024, NULL,
+                6, NULL
+    );
 }
