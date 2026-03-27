@@ -8,8 +8,6 @@
 #include "display.h"
 #include "../stm_ssd1306/ssd1306.h"
 
-static void lv_disp_init(void);
-
 static void disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 
 static SemaphoreHandle_t xGuiSemaphore = NULL; // LVGL互斥信号量
@@ -17,10 +15,6 @@ volatile bool disp_flush_enabled = true;
 static uint8_t disp_buf1[DISP_BUF_SIZE];
 static uint8_t disp_buf2[DISP_BUF_SIZE];
 
-void lv_disp_init(void)
-{
-    display_init();
-}
 
 void disp_enable_update(void)
 {
@@ -141,7 +135,6 @@ void lvgl_task(void *pvParameters)
 {
     (void)pvParameters;
     uint32_t uMSToWait = 0;
-    // printf("Hello LVGL\n");
     while(1)
     {
         if(lvgl_port_lock(portMAX_DELAY))
@@ -155,7 +148,7 @@ void lvgl_task(void *pvParameters)
 
 void lv_port_disp_init(void)
 {
-    lv_disp_init();
+    display_init();
 
     xGuiSemaphore = xSemaphoreCreateMutex();
     lv_init();
@@ -168,4 +161,5 @@ void lv_port_disp_init(void)
     xTaskCreate(lvgl_task, "LVGL", 1024, NULL,
                 6, NULL
     );
+    LOGI("LVGL", "Display初始化完成");
 }
