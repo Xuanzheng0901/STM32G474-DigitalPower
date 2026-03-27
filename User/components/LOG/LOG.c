@@ -15,9 +15,9 @@
 
 static log_level_t s_log_level = LOG_VERBOSE;
 
-static xQueueHandle log_queue = NULL;
-static xQueueHandle log_mem_pool_queue = NULL;
-static xSemaphoreHandle log_uart_sem = NULL;
+static xQueueHandle log_queue = NULL;   //业务代码发送日志的接口
+static xQueueHandle log_mem_pool_queue = NULL;  //存放内存池指针的队列
+static xSemaphoreHandle log_uart_sem = NULL;   //USART/DMA信号量
 static TaskHandle_t log_task_handle = NULL;
 
 static log_data_t log_mem_pool[LOG_MEM_POOL_SIZE];
@@ -59,12 +59,12 @@ static int log_format_message(char *raw, const char *color, char level_char, uin
 {
     int offset = 0;
     static const char reset_str[] = "\033[0m\n";
-    const int reserve_len = sizeof(reset_str) - 1; // 编译期计算，替代代价较高的 strlen
-    int max_len_for_text = LOG_RAW_MAX_LEN - reserve_len - 1;
+    static const int reserve_len = sizeof(reset_str) - 1; // 编译期计算，替代代价较高的 strlen
+    static const int max_len_for_text = LOG_RAW_MAX_LEN - reserve_len - 1;
 
     int n = snprintf(raw + offset, max_len_for_text - offset,
                      "\033[0;%sm%c (%lu) %s: ",
-                     color, level_char, ts, tag);
+                     color, level_char, ts, tag); //拼接颜色转义代码、日志等级、时间、tag
     if(n < 0)
         n = 0;
     if(n >= max_len_for_text - offset)
@@ -73,15 +73,15 @@ static int log_format_message(char *raw, const char *color, char level_char, uin
 
     if(offset < max_len_for_text)
     {
-        n = vsnprintf(raw + offset, max_len_for_text - offset, format, args);
+        n = vsnprintf(raw + offset, max_len_for_text - offset, format, args); //打印格式化字符串到缓冲区
         if(n < 0)
             n = 0;
         if(n >= max_len_for_text - offset)
-            n = max_len_for_text - offset;
+            n = max_len_for_text - offset;  //防止截断导致无法转回正常颜色
         offset += n;
     }
 
-    memcpy(raw + offset, reset_str, reserve_len + 1); // 替代 strcpy，使用已知长度的高效拷贝
+    memcpy(raw + offset, reset_str, reserve_len + 1);
     offset += reserve_len;
 
     return offset;
@@ -123,7 +123,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
     static BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     if(huart == &huart3)
     {
-        vTaskNotifyGiveFromISR(log_task_handle, &xHigherPriorityTaskWoken);
+        vTaskNotifyGiveFromISR(log_task_handle, &xHigherPriorityTaskWoken);  //中断中通知发送任务
     }
 }
 
@@ -132,7 +132,7 @@ void log_send_task(void *args)
     log_data_t *recv_buf_ptr = NULL;
     while(1)
     {
-        if(xQueueReceive(log_queue, &recv_buf_ptr, portMAX_DELAY) == pdTRUE)
+        if(xQueueReceive(log_queue, &recv_buf_ptr, portMAX_DELAY) == pdTRUE)  //等待日志
         {
             if(HAL_UART_Transmit_DMA(&huart3, (const uint8_t *)recv_buf_ptr->data, recv_buf_ptr->len) != HAL_OK)
             {
@@ -141,7 +141,7 @@ void log_send_task(void *args)
                 continue;
             }
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY); //等待DMA传输完成
-            xQueueSend(log_mem_pool_queue, &recv_buf_ptr, 0);
+            xQueueSend(log_mem_pool_queue, &recv_buf_ptr, 0);  //完成后释放内存块
         }
     }
 }
