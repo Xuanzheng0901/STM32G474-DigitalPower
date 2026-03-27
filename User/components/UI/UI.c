@@ -7,6 +7,8 @@
 #include "tim.h"
 #include "PID.h"
 
+LV_FONT_DECLARE(chillbit);
+
 extern lv_obj_t *highlight_frame;
 extern lv_anim_t focus_anim;
 
@@ -217,11 +219,18 @@ static void home_page_init(void)
         // 为spinbox控件添加焦点事件
         lv_obj_add_event_cb(voltage_spinbox, focus_event_cb, LV_EVENT_FOCUSED, NULL);
         lv_obj_add_event_cb(current_spinbox, focus_event_cb, LV_EVENT_FOCUSED, NULL);
+
+
+        lv_obj_t *my_label = lv_label_create(lv_scr_act());
+        lv_label_set_text(my_label, "电压电流");
+        lv_obj_set_style_text_font(my_label, &chillbit, 0);
+        lv_obj_align(my_label, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        lv_obj_set_width(my_label, 128);
         lvgl_port_unlock();
     }
 }
 
-void display_init(void)
+void ui_init(void)
 {
     lv_port_disp_init();
     indev_init();
