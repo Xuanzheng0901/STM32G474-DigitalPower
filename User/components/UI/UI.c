@@ -89,6 +89,8 @@ static void indev_init(void)
     indev = lvgl_port_add_encoder(&encoder_cfg);
     group = lv_group_create();
     lv_indev_set_group(indev, group);
+
+    LOGI("LVGL", "输入设备初始化完成");
 }
 
 static void home_page_init(void)
@@ -235,6 +237,8 @@ void ui_init(void)
     lv_port_disp_init();
     indev_init();
     home_page_init();
+    LOGI("LVGL", "界面初始化完成");
+    LOGI("LVGL", "Hello LVGL!");
     if(xTaskCreate(value_update_task, "update value", 384, NULL, 10, NULL) != pdPASS)
     {
         printf("update value task creation failed\n");

@@ -59,4 +59,6 @@ void display_init(void)
 #elif DISPLAY_USE == DISPLAY_SSD1306
     ssd1306_init();
 #endif
+
+    LOGI("OLED", "初始化完成");
 }
