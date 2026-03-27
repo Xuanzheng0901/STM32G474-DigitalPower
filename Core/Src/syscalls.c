@@ -77,16 +77,16 @@ __attribute__((weak)) int _read(int file, char *ptr, int len)
   return len;
 }
 
-__attribute__((weak)) int _write(int file, char *ptr, int len)
+__attribute__((weak)) int _write(int file, char *p, int l)
 {
   (void)file;
   int DataIdx;
 
-  for (DataIdx = 0; DataIdx < len; DataIdx++)
+  for (DataIdx = 0; DataIdx < l; DataIdx++)
   {
-    __io_putchar(*ptr++);
+    __io_putchar(*p++);
   }
-  return len;
+  return l;
 }
 
 int _close(int file)
