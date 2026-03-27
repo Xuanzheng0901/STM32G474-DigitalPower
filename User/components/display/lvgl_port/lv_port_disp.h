@@ -30,7 +30,7 @@ typedef struct {
  **********************/
 /* Initialize low level display driver */
 
-void display_init(void);
+void ui_init(void);
 
 void lv_port_disp_init(void);
 
