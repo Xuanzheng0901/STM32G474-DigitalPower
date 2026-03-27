@@ -27,7 +27,7 @@ void app_main(void)
     HAL_HRTIM_WaveformCounterStart(&hhrtim1, HRTIM_TIMERID_TIMER_E);
     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TE1 | HRTIM_OUTPUT_TE2);
     hhrtim1.Instance->sTimerxRegs[4].CMP1CxR = 0;
-    display_init();
+    ui_init();
     pid_ctrl_init();
     ADC_init();
 }
