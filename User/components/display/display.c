@@ -30,12 +30,12 @@ void display_tx_cmd(uint8_t cmd, const uint8_t *param, size_t param_size)
 {
     xSemaphoreTake(spi_mutex, portMAX_DELAY);
     display_switch_data_control(display_COMMAND);
-    HAL_SPI_Transmit_DMA(&hspi1, &cmd, 1);
-    xSemaphoreTake(spi_dma_sem, portMAX_DELAY);
+    HAL_SPI_Transmit(&hspi1, &cmd, 1, 10);
+    // xSemaphoreTake(spi_dma_sem, portMAX_DELAY);
     if(param != NULL && param_size > 0)
     {
-        HAL_SPI_Transmit_DMA(&hspi1, param, param_size);
-        xSemaphoreTake(spi_dma_sem, portMAX_DELAY);
+        HAL_SPI_Transmit(&hspi1, param, param_size, 10);
+        // xSemaphoreTake(spi_dma_sem, portMAX_DELAY);
     }
     xSemaphoreGive(spi_mutex);
 }
