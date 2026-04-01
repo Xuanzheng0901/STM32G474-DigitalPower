@@ -13,9 +13,11 @@ static xSemaphoreHandle spi_mutex;
 
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     if(hspi == &hspi1)
     {
-        xSemaphoreGiveFromISR(spi_dma_sem, NULL);
+        xSemaphoreGiveFromISR(spi_dma_sem, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 }
 
