@@ -34,9 +34,10 @@ void sh1107_draw(uint8_t *buffer)
 {
 	for(uint8_t page = 0; page < (SH1107_HEIGHT / 8); page++)
 	{
-		display_tx_cmd((uint8_t)(SH1107_CMD_SET_PAGE_ADDR + page), NULL, 0);
-		display_tx_cmd(SH1107_CMD_SET_COL_HIGHER, NULL, 0);
-		display_tx_cmd(SH1107_CMD_SET_COL_LOWER, NULL, 0);
+		display_tx_cmd((uint8_t)(SH1107_CMD_SET_PAGE_ADDR + page),
+		               (uint8_t[]){SH1107_CMD_SET_COL_HIGHER, SH1107_CMD_SET_COL_LOWER}, 2);
+		// display_tx_cmd(SH1107_CMD_SET_COL_HIGHER, NULL, 0);
+		// display_tx_cmd(SH1107_CMD_SET_COL_LOWER, NULL, 0);
 
 		display_tx_data(&buffer[page * SH1107_WIDTH], SH1107_WIDTH);
 	}
