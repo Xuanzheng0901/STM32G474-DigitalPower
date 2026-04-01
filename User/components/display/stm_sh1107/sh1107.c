@@ -18,6 +18,7 @@ void sh1107_init(void)
 	// 1. 硬件复位
 	sh1107_reset();
 
+	display_tx_cmd(SH1107_CMD_SET_CLOCK_DIV, (uint8_t[]){0xF0}, 1);
 	// 6. 驱动电压与对比度
 	display_tx_cmd(SH1107_CMD_SET_DISPLAY_CONTRAST, (uint8_t[]){0x40}, 1);
 	display_tx_cmd(SH1107_CMD_SET_PRECHARGE_PERIOD, (uint8_t[]){0x22}, 1);
