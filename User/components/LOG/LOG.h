@@ -6,6 +6,9 @@
 
 #ifndef G474_1_LOG_H
 #define G474_1_LOG_H
+#include <stdint.h>
+
+#define LOG_RAW_MAX_LEN 253
 
 typedef enum {
     LOG_NONE, /* 不输出 */
@@ -15,6 +18,13 @@ typedef enum {
     LOG_DEBUG, /* 调试 (Default/White) */
     LOG_VERBOSE /* 详细 (Gray) */
 } log_level_t;
+
+typedef struct {
+    uint16_t len;
+    char data[LOG_RAW_MAX_LEN + 1];
+} log_data_t;
+
+void log_init(log_level_t level);
 
 void log_set_level(log_level_t level);
 

@@ -5,7 +5,7 @@
 #include "timers.h"
 #include "lv_port_knob.h"
 
-#define CONFIG_KNOB_PERIOD_TIME_MS      (10)
+#define CONFIG_KNOB_PERIOD_TIME_MS      (5)
 #define KNOB_ECODER_RESOLUTION          (2) // 2次脉冲计数
 #define CONFIG_KNOB_HIGH_LIMIT          (2147483647) // 上限
 #define CONFIG_KNOB_LOW_LIMIT           (-2147483647) //下限

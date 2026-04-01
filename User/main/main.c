@@ -8,12 +8,12 @@
 #include "lvgl.h"
 #include "lv_port_disp.h"
 #include "spi.h"
-#include "mppt.h"
 
 extern TaskHandle_t adc_task_handle;
 
 void LED_task0(void *arg)
 {
+    LOGI("LED", "Task Running. Stack: %p", xTaskGetCurrentTaskHandle());
     while(1)
     {
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -23,12 +23,16 @@ void LED_task0(void *arg)
 
 void app_main(void)
 {
-    printf("hello world\n");
-    xTaskCreate(LED_task0, "LED", 128, NULL, 10, NULL);
+    log_init(LOG_INFO);
+    LOGI("MAIN", "Hello world!");
+
+
+    // printf("helloworld\n");
+    xTaskCreate(LED_task0, "LED", 256, NULL, 10, NULL);
     HAL_HRTIM_WaveformCounterStart(&hhrtim1, HRTIM_TIMERID_TIMER_E);
     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TE1 | HRTIM_OUTPUT_TE2);
     hhrtim1.Instance->sTimerxRegs[4].CMP1CxR = 0;
-    display_init();
-    MPPT_init();
+    ui_init();
+    pid_ctrl_init();
     ADC_init();
 }

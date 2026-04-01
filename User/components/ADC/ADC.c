@@ -32,4 +32,5 @@ void ADC_init(void)
     adc_queue = xQueueCreate(5, sizeof(uint32_t));
     // HAL_ADC_Start(&hadc2); // ADC2的 Overrun Behavior 必须配置为 Overwritten
     HAL_ADCEx_MultiModeStart_DMA(&hadc1, adc_buffer_origin, ADC_BUFFER_LENGTH);
+    LOGI("ADC", "已启动");
 }

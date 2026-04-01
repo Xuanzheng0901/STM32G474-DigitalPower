@@ -7,6 +7,8 @@
 #include "tim.h"
 #include "mppt.h"
 
+LV_FONT_DECLARE(chillbit);
+
 extern lv_obj_t *highlight_frame;
 extern lv_anim_t focus_anim;
 
@@ -87,6 +89,8 @@ static void indev_init(void)
     indev = lvgl_port_add_encoder(&encoder_cfg);
     group = lv_group_create();
     lv_indev_set_group(indev, group);
+
+    LOGI("LVGL", "输入设备初始化完成");
 }
 
 static void home_page_init(void)
@@ -217,15 +221,24 @@ static void home_page_init(void)
         // 为spinbox控件添加焦点事件
         lv_obj_add_event_cb(voltage_spinbox, focus_event_cb, LV_EVENT_FOCUSED, NULL);
         lv_obj_add_event_cb(current_spinbox, focus_event_cb, LV_EVENT_FOCUSED, NULL);
+
+
+        lv_obj_t *my_label = lv_label_create(lv_scr_act());
+        lv_label_set_text(my_label, "电压电流");
+        lv_obj_set_style_text_font(my_label, &chillbit, 0);
+        lv_obj_align(my_label, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        lv_obj_set_width(my_label, 128);
         lvgl_port_unlock();
     }
 }
 
-void display_init(void)
+void ui_init(void)
 {
     lv_port_disp_init();
     indev_init();
     home_page_init();
+    LOGI("LVGL", "界面初始化完成");
+    LOGI("LVGL", "Hello LVGL!");
     if(xTaskCreate(value_update_task, "update value", 384, NULL, 10, NULL) != pdPASS)
     {
         printf("update value task creation failed\n");
