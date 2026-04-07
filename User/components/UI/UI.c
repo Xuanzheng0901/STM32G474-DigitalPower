@@ -21,10 +21,12 @@ lv_group_t *group = NULL;
 static lv_obj_t *voltage_label = NULL;
 static lv_obj_t *current_label = NULL;
 static lv_obj_t *power_value_label = NULL;
+static lv_obj_t *bat_v_label = NULL;
+static lv_obj_t *bat_i_label = NULL;
 lv_obj_t *voltage_spinbox = NULL;
 lv_obj_t *current_spinbox = NULL;
 
-static char value_buf[3][32] = {"0.00", "0.00", "00.00W"};
+static char value_buf[5][32] = {"0.00", "0.00", "00.00W", "0.00", "0.00"};
 
 static void lvgl_event_cb(lv_event_t *evt)
 {
@@ -35,6 +37,7 @@ static void lvgl_event_cb(lv_event_t *evt)
         // pid_set_voltage(value * 10);
         // snprintf(value_buf[0], 32, "%ld", value);
         // lv_obj_invalidate(voltage_label);
+        pwm_set_duty(value * 10);
     }
     else if(lv_event_get_current_target(evt) == current_spinbox)
     {
@@ -49,17 +52,25 @@ static void value_update_task(void *arg)
     while(1)
     {
         vTaskDelay(100);
-        float voltage = get_voltage_value(0) / 1000.0f;
-        float current = get_voltage_value(1);
+        float voltage = get_voltage_value(POWER_V) / 1000.0f;
+        float current = get_voltage_value(POWER_I) / 1000.0f;
+        float bat_v = get_voltage_value(BAT_V) / 1000.0f;
+        float bat_i = get_voltage_value(BAT_I) / 1000.0f;
+
         snprintf(value_buf[0], 6, "%5.2f", voltage);
         snprintf(value_buf[1], 5, "%4.2f", current);
         snprintf(value_buf[2], 8, "%6.2fW", voltage * current);
+
+        snprintf(value_buf[3], 6, "%5.2f", bat_v);
+        snprintf(value_buf[4], 5, "%4.2fW", bat_i);
 
         if(lvgl_port_lock(portMAX_DELAY))
         {
             lv_label_set_text_static(voltage_label, value_buf[0]);
             lv_label_set_text_static(current_label, value_buf[1]);
             lv_label_set_text_static(power_value_label, value_buf[2]);
+            lv_label_set_text_static(bat_v_label, value_buf[3]);
+            lv_label_set_text_static(bat_i_label, value_buf[4]);
             lvgl_port_unlock();
         }
     }
@@ -129,6 +140,20 @@ static void home_page_init(void)
         lv_obj_set_style_text_align(current_label, LV_TEXT_ALIGN_LEFT, 0);
         lv_obj_align(current_label, LV_ALIGN_TOP_LEFT, 94, 32);
 
+        // 电压数值
+        bat_v_label = lv_label_create(lv_screen_active());
+        lv_label_set_text_static(bat_v_label, value_buf[3]);
+        lv_obj_set_width(bat_v_label, 30);
+        lv_obj_set_style_text_align(bat_v_label, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(bat_v_label, LV_ALIGN_TOP_LEFT, 37, 64);
+
+        //电流数值
+        bat_i_label = lv_label_create(lv_screen_active());
+        lv_label_set_text_static(bat_i_label, value_buf[4]);
+        lv_obj_set_width(bat_i_label, 24);
+        lv_obj_set_style_text_align(bat_i_label, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_align(bat_i_label, LV_ALIGN_TOP_LEFT, 94, 64);
+
         lv_obj_t *power_label = lv_label_create(lv_screen_active());
         lv_label_set_text(power_label, "功率");
         lv_obj_set_width(power_label, 42);
@@ -145,7 +170,7 @@ static void home_page_init(void)
 
         //电压调整框
         voltage_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(voltage_spinbox, 0, 2500);
+        lv_spinbox_set_range(voltage_spinbox, 0, 43520);
         lv_spinbox_set_digit_format(voltage_spinbox, 4, 2);
         lv_spinbox_set_step(voltage_spinbox, 1);
 

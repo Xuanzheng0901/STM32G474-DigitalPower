@@ -8,7 +8,7 @@
 
 extern QueueHandle_t adc_queue;
 // 实时量: 电流单位A, 电压单位mV(与UI显示接口保持一致)
-static float now_current_A = 0.0f, now_voltage_mV = 0.0f;
+static float now_current_A = 0.0f, now_voltage_mV = 0.0f, now_battery_voltage_mV = 0.0f, now_battery_current_A = 0.0f;
 
 // 电压二阶IIR平滑系数: 新值+一阶历史+二阶历史
 #define RC_ALPHA_DENO_1        0.85f
@@ -35,9 +35,10 @@ static float now_current_A = 0.0f, now_voltage_mV = 0.0f;
 
 void pwm_set_duty(uint32_t pwm_duty) //占空比0-54400
 {
-    if(pwm_duty <= 27200)
+    if(pwm_duty <= (PWM_Period / 2))
     {
-        __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_E, HRTIM_COMPAREUNIT_3, 27200 - (pwm_duty >> 1) + 1);
+        __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_E, HRTIM_COMPAREUNIT_3,
+                               (PWM_Period / 2) - (pwm_duty >> 1) + 1);
     }
 
     else
@@ -49,14 +50,21 @@ void pwm_set_duty(uint32_t pwm_duty) //占空比0-54400
 }
 
 // UI读取接口: index=0返回mV, index=1返回A
-float get_voltage_value(uint8_t index)
+float get_voltage_value(voltage_data_t data)
 {
-    if(index == 0)
-        return now_voltage_mV;
-    if(index == 1)
-        return now_current_A;
-
-    return 0.0f;
+    switch(data)
+    {
+        case POWER_V:
+            return now_voltage_mV;
+        case POWER_I:
+            return now_current_A;
+        case BAT_V:
+            return now_battery_voltage_mV;
+        case BAT_I:
+            return now_battery_current_A;
+        default:
+            return 0.0f;
+    }
 }
 
 static float last_last_voltage_mV = 0.0f;
@@ -65,19 +73,30 @@ static float last_last_current_mA = 0.0f;
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
 static inline void adc_data_process(uint32_t *data_buf)
 {
-    float origin_voltage_sum = 0.0f, origin_current_sum = 0.0f;
-    for(uint8_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
+    float origin_power_voltage_sum = 0.0f, origin_power_current_sum = 0.0f;
+    float origin_battery_voltage_sum = 0.0f, origin_battery_current_sum = 0.0f;
+
+    for(uint8_t i = 0; i < ADC_BUFFER_LENGTH / 2; i += 2)
     {
-        origin_voltage_sum += data_buf[i] & 0x0FFF;
-        origin_current_sum += data_buf[i] >> 16;
+        origin_power_voltage_sum += data_buf[i] & 0x0FFF;
+        origin_power_current_sum += data_buf[i] >> 16;
+
+        origin_battery_voltage_sum += data_buf[i + 1] & 0x0FFF;
+        origin_battery_current_sum += data_buf[i + 1] >> 16;
     }
-    // origin_voltage_sum / 4095 * 3300 / 20(样本量) = adc引脚上的电压
+    // origin_voltage_sum / 4095 * 3300 / (样本量) = adc引脚上的电压
     // * 20 = 运放输入电压(运放20分压)
     // * 1.0079(adc误差修正)
-    float temp_voltage_mV = origin_voltage_sum * 3300.0f / 4095.0f / (float)(ADC_BUFFER_LENGTH / 2) * 20.0f *
-                            1.0079f;
+    float temp_voltage_mV = origin_power_voltage_sum * 3000.0f / 4096.0f / ((float)(ADC_BUFFER_LENGTH / 2 / 2)) * 20.0f;
+    // * 1.0079f;
 
-    float temp_current_mA = origin_current_sum * 3300.0f / 4095.0f / (ADC_BUFFER_LENGTH / 2) * 2.0f / 1.05f; //单位A
+    float temp_current_mA = origin_power_current_sum * 3000.0f / 4096.0f / ((float)(ADC_BUFFER_LENGTH / 2 / 2)) * 2.0f;
+    // / 1.05f; //单位mA
+
+    now_battery_voltage_mV = origin_battery_voltage_sum * 3000.0f / 4096.0f / ((float)(
+                                 ADC_BUFFER_LENGTH / 2 / 2)) * 20.0f;
+    now_battery_current_A = (origin_battery_current_sum * 3000.0f / 4096.0f / ((float)(
+                                 ADC_BUFFER_LENGTH / 2 / 2)) - 1650.0f) * 2.0f;
 
     //对均值进行二阶rc滤波
     temp_voltage_mV = RC_ALPHA_DENO_1 * temp_voltage_mV + RC_ALPHA_DENO_2 * now_voltage_mV +
@@ -107,14 +126,14 @@ static inline uint32_t clamp_duty(int32_t duty)
 void mppt_routine(void *args)
 {
     static uint32_t *buf_ptr;
-    uint32_t duty = MPPT_DUTY_INIT;
+    uint32_t duty = 0;
     int8_t direction = 1;
     uint8_t update_div_cnt = 0;
 
     float prev_power_w = 0.0f;
     uint8_t initialized = 0;
 
-    pwm_set_duty(duty);
+    // pwm_set_duty(duty);
 
     (void)args;
     printf("MPPT started\n");
@@ -124,37 +143,37 @@ void mppt_routine(void *args)
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) == pdTRUE)
         {
             adc_data_process(buf_ptr);
-
-            if(++update_div_cnt < MPPT_CTRL_UPDATE_DIV)
-                continue;
-            update_div_cnt = 0;
-
-            // P(W) = V(mV) * I(A) / 1000
-            float now_power_w = (now_voltage_mV * now_current_A) / 1000000.0f;
-
-            if(!initialized)
-            {
-                prev_power_w = now_power_w;
-                initialized = 1;
-                continue;
-            }
-
-            // 一阶差分: 当前功率变化量
-            float d_power_w = now_power_w - prev_power_w;
-
-            // 硬反转: 功率明确下降(超过死区)
-            if(d_power_w < -MPPT_POWER_EPS_W)
-            {
-                direction = -direction;
-            }
-
-            duty = clamp_duty((int32_t)duty + direction * (int32_t)MPPT_DUTY_STEP);
-
-            if((duty == MPPT_DUTY_MIN && direction < 0) || (duty == MPPT_DUTY_MAX && direction > 0))
-                direction = -direction;
-
-            pwm_set_duty(duty);
-            prev_power_w = now_power_w;
+            //
+            // if(++update_div_cnt < MPPT_CTRL_UPDATE_DIV)
+            //     continue;
+            // update_div_cnt = 0;
+            //
+            // // P(W) = V(mV) * I(A) / 1000
+            // float now_power_w = (now_voltage_mV * now_current_A) / 1000000.0f;
+            //
+            // if(!initialized)
+            // {
+            //     prev_power_w = now_power_w;
+            //     initialized = 1;
+            //     continue;
+            // }
+            //
+            // // 一阶差分: 当前功率变化量
+            // float d_power_w = now_power_w - prev_power_w;
+            //
+            // // 硬反转: 功率明确下降(超过死区)
+            // if(d_power_w < -MPPT_POWER_EPS_W)
+            // {
+            //     direction = -direction;
+            // }
+            //
+            // duty = clamp_duty((int32_t)duty + direction * (int32_t)MPPT_DUTY_STEP);
+            //
+            // if((duty == MPPT_DUTY_MIN && direction < 0) || (duty == MPPT_DUTY_MAX && direction > 0))
+            //     direction = -direction;
+            //
+            // pwm_set_duty(duty);
+            // prev_power_w = now_power_w;
         }
     }
 }
