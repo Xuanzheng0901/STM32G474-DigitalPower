@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include "pid_ctrl_internal.h"
 #include "FreeRTOS.h"
 #include "hrtim.h"
@@ -68,32 +70,28 @@ static float last_last_current_A = 0.0f;
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
 static inline void adc_data_process(uint32_t *data_buf)
 {
+    float dc_offset = 0.0f;
+    float sum_squares = 0.0f;
+    float rms = 0.0f;
     float origin_voltage_sum = 0.0f, origin_current_sum = 0.0f;
-    for(uint8_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
+    for(uint16_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
     {
         origin_voltage_sum += data_buf[i] & 0x0FFF;
         origin_current_sum += data_buf[i] >> 16;
     }
-    // origin_voltage_sum / 4095 * 3300 / 20(样本量) = adc引脚上的电压
-    // * 20 = 运放输入电压(运放20分压)
-    // * 1.0079(adc误差修正)
-    float temp_voltage_mV = origin_voltage_sum * 3300.0f / 4095.0f / (float)(ADC_BUFFER_LENGTH / 2) * 20.0f *
-                            1.0079f;
 
-    float temp_current_A = origin_current_sum * 3300.0f / 4095.0f / (ADC_BUFFER_LENGTH / 2) * 2.0f / 1050.0f; //单位mA
+    dc_offset = origin_voltage_sum / (ADC_BUFFER_LENGTH / 2);
 
-    //对均值进行二阶rc滤波
-    temp_voltage_mV = RC_ALPHA_DENO_1 * temp_voltage_mV + RC_ALPHA_DENO_2 * now_voltage_mV +
-                      RC_ALPHA_DENO_3 * last_last_voltage_mV;
+    for(uint16_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
+    {
+        float ac_component = (float)(data_buf[i] & 0x0FFF) - dc_offset;
+        sum_squares += (ac_component * ac_component);
+    }
 
-    temp_current_A = RC_ALPHA_DENO_1 * temp_current_A + RC_ALPHA_DENO_2 * now_current_A +
-                     RC_ALPHA_DENO_3 * last_last_current_A;
+    rms = sqrtf(sum_squares / (ADC_BUFFER_LENGTH / 2));
 
-    last_last_voltage_mV = now_voltage_mV;
-    last_last_current_A = now_current_A;
-
-    now_voltage_mV = temp_voltage_mV;
-    now_current_A = temp_current_A;
+    rms *= (3000.0f / 4095.0f * 39.0909f);
+    now_voltage_mV = rms;
 }
 
 
@@ -110,6 +108,7 @@ static void PID_ctrl_routine(void *pvParameters)
         //1. 等待ADC数据
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) == pdTRUE)
         {
+            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
             //2. 查询target是否改变
             if(pdPASS == xQueueReceive(pid_ctrl_queue_mV, &target_voltage_buffer_mV, 0))
             {
@@ -120,13 +119,14 @@ static void PID_ctrl_routine(void *pvParameters)
                 }
             }
             adc_data_process(buf_ptr);
-
-            //4. 进行pid计算
-            float error_mV = (float)target_voltage_mV - now_voltage_mV;
-
-            pid_compute(pid_handle, error_mV, &next_output_voltage_mV);
-            uint32_t output_duty = voltage_to_duty(next_output_voltage_mV);
-            pwm_set_duty(output_duty);
+            //
+            // //4. 进行pid计算
+            // float error_mV = (float)target_voltage_mV - now_voltage_mV;
+            //
+            // pid_compute(pid_handle, error_mV, &next_output_voltage_mV);
+            // uint32_t output_duty = voltage_to_duty(next_output_voltage_mV);
+            // pwm_set_duty(output_duty);
+            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
         }
     }
 }

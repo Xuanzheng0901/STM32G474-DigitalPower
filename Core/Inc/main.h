@@ -47,7 +47,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-#define ADC_BUFFER_LENGTH 40  // pid调控频率为PWM频率(100kHz) / ADC触发器分频(50) / ADC缓冲区的一半(20) = 100Hz
+#define ADC_BUFFER_LENGTH 40  // pid调控频率为PWM频率(20kHz) / ADC触发器分频(20) / ADC缓冲区的一半(20) = 50Hz
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
@@ -68,8 +68,6 @@ void pid_ctrl_init(void);
 #define SPI1_RESET_GPIO_Port GPIOA
 #define SPI1_DC_Pin GPIO_PIN_6
 #define SPI1_DC_GPIO_Port GPIOA
-#define SPI3_DC_Pin GPIO_PIN_0
-#define SPI3_DC_GPIO_Port GPIOD
 #define SPI3_RESET_Pin GPIO_PIN_1
 #define SPI3_RESET_GPIO_Port GPIOD
 #define Encoder_key_Pin GPIO_PIN_5
