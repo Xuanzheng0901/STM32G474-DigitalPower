@@ -158,8 +158,9 @@ void lv_port_disp_init(void)
     lv_display_set_buffers(disp, disp_buf1, disp_buf2, DISP_BUF_SIZE, LV_DISPLAY_RENDER_MODE_DIRECT); // 双全缓冲模式
     lv_display_set_flush_cb(disp, disp_flush);
 
-    xTaskCreate(lvgl_task, "LVGL", 1024, NULL,
-                6, NULL
-    );
-    LOGI("LVGL", "Display初始化完成");
+    if(xTaskCreate(lvgl_task, "LVGL", 1024, NULL,
+                   6, NULL) == pdPASS)
+        LOGI("LVGL", "Display初始化完成");
+    else
+        LOGE("LVGL", "Display任务创建失败");
 }
