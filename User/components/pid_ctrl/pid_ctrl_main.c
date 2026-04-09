@@ -70,9 +70,9 @@ static float last_last_current_A = 0.0f;
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
 static inline void adc_data_process(uint32_t *data_buf)
 {
-    float dc_offset = 0.0f;
-    float sum_squares = 0.0f;
-    float rms = 0.0f;
+    float v_dc_offset = 0.0f, i_dc_offset = 0.0f;
+    float v_sum_squares = 0.0f, i_sum_squares = 0.0f;
+    float v_rms = 0.0f, i_rms = 0.0f;
     float origin_voltage_sum = 0.0f, origin_current_sum = 0.0f;
     for(uint16_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
     {
@@ -80,18 +80,24 @@ static inline void adc_data_process(uint32_t *data_buf)
         origin_current_sum += data_buf[i] >> 16;
     }
 
-    dc_offset = origin_voltage_sum / (ADC_BUFFER_LENGTH / 2);
+    v_dc_offset = origin_voltage_sum / (ADC_BUFFER_LENGTH / 2);
+    i_dc_offset = origin_current_sum / (ADC_BUFFER_LENGTH / 2);
 
     for(uint16_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
     {
-        float ac_component = (float)(data_buf[i] & 0x0FFF) - dc_offset;
-        sum_squares += (ac_component * ac_component);
+        float v_ac_component = (float)(data_buf[i] & 0x0FFF) - v_dc_offset;
+        float i_ac_component = (float)(data_buf[i] >> 16) - i_dc_offset;
+        v_sum_squares += (v_ac_component * v_ac_component);
+        i_sum_squares += (i_ac_component * i_ac_component);
     }
 
-    rms = sqrtf(sum_squares / (ADC_BUFFER_LENGTH / 2));
+    v_rms = sqrtf(v_sum_squares / (ADC_BUFFER_LENGTH / 2));
+    i_rms = sqrtf(i_sum_squares / (ADC_BUFFER_LENGTH / 2));
 
-    rms *= (3000.0f / 4095.0f * 39.0909f);
-    now_voltage_mV = rms;
+    v_rms *= (3000.0f / 4095.0f * 39.25f);
+    i_rms *= ((3000.0f / 4095.0f) / 100.0f);
+    now_voltage_mV = v_rms;
+    now_current_A = i_rms;
 }
 
 
