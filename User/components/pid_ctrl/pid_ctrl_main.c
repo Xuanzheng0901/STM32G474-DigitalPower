@@ -17,27 +17,47 @@ static float now_current_A = 0.0f, now_voltage_mV = 0.0f;
 #define PWM_PERIOD_ARR    PWM_Period
 #define INPUT_VOLTAGE_MV  30000.0f // 输入电压 (暂时假设30V)
 #define MAX_DUTY_RATIO    0.80f    // 最大占空比限制 (理论4倍升压)
-#define RC_ALPHA_DENO_1   0.85f
-#define RC_ALPHA_DENO_2   0.10f
-#define RC_ALPHA_DENO_3   0.05f
 
-static uint32_t voltage_to_duty(float expect_mV)
+#define TABLE_SIZE 400
+#define PERIOD_VAL 34000
+
+volatile uint32_t SineTable[TABLE_SIZE];
+volatile uint32_t sin_index = 0;
+
+
+void HAL_HRTIM_RepetitionEventCallback(HRTIM_HandleTypeDef *hhrtim, uint32_t TimerIdx)
 {
-    if(expect_mV < 10.0f)
-        return 0;
+    //  2. 严谨判断：只有当 Master 定时器的 Registers Update 触发时才执行
+    if(TimerIdx == HRTIM_TIMERINDEX_MASTER)
+    {
+        uint32_t duty_A = SineTable[sin_index] >> 1;
+        uint32_t duty_B = (PERIOD_VAL - SineTable[sin_index]) >> 1; // 34000 - duty_A
 
-    float denominator = expect_mV + INPUT_VOLTAGE_MV;
+        // 翻转 PC0 供示波器观察，如果 PC0 变成 20kHz 脉冲，说明中断完全正常
+        // HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
 
-    if(denominator < 100.0f)
-        denominator = 100.0f;
+        //  3. 写入 A 和 B 的占空比（绝不去改 Master 的 CMP1 寄存器）
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, 17000 - duty_A);
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, 17000 + duty_A);
 
-    float duty_cycle = expect_mV / denominator;
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_1, 17000 - duty_B);
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, 17000 + duty_B);
 
-    // 硬件保护
-    if(duty_cycle > MAX_DUTY_RATIO)
-        duty_cycle = MAX_DUTY_RATIO;
+        // sin_index++;
+        if(++sin_index >= TABLE_SIZE)
+        {
+            sin_index = 0;
+        }
+    }
+}
 
-    return (uint32_t)(duty_cycle * PWM_PERIOD_ARR);
+static void set_mod_ratio_by_factor(float factor)
+{
+    for(int i = 0; i < TABLE_SIZE; i++)
+    {
+        float theta = (2.0f * (float)M_PI * (float)i) / (float)TABLE_SIZE;
+        SineTable[i] = (uint32_t)(17000.0f * (1.0f + factor * sinf(theta)) + 0.5f);
+    }
 }
 
 void pwm_set_duty(uint32_t pwm_duty) //占空比0-54400
@@ -109,6 +129,9 @@ static void PID_ctrl_routine(void *pvParameters)
     static float next_output_voltage_mV = 0.0f;
 
     static uint32_t *buf_ptr;
+
+    set_mod_ratio_by_factor(0.6f);
+
     while(1)
     {
         //1. 等待ADC数据
