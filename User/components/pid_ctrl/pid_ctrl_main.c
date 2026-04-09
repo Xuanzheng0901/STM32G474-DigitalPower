@@ -1,11 +1,11 @@
-#include <math.h>
-
 #include "pid_ctrl_internal.h"
 #include "FreeRTOS.h"
+#include <math.h>
 #include "hrtim.h"
 #include "main.h"
 #include "task.h"
 #include "queue.h"
+#include "kalman.h"
 
 extern QueueHandle_t adc_queue;
 
@@ -88,36 +88,71 @@ static float last_last_voltage_mV = 0.0f;
 static float last_last_current_A = 0.0f;
 
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
-static inline void adc_data_process(uint32_t *data_buf)
+static void adc_data_process(uint32_t *data_buf)
 {
-    float v_dc_offset = 0.0f, i_dc_offset = 0.0f;
-    float v_sum_squares = 0.0f, i_sum_squares = 0.0f;
-    float v_rms = 0.0f, i_rms = 0.0f;
-    float origin_voltage_sum = 0.0f, origin_current_sum = 0.0f;
-    for(uint16_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
+    static kalman_1d_state_t kf_voltage;
+    static kalman_1d_state_t kf_current;
+    static uint8_t is_kf_initialized = 0;
+
+    uint32_t v_sum = 0, i_sum = 0;
+    uint64_t v_sq_sum = 0, i_sq_sum = 0; // 使用 64 位防止平方和溢出
+
+    uint16_t len = ADC_BUFFER_LENGTH / 2;
+
+    // 单次循环，全程整数运算，速度极快
+    for(uint16_t i = 0; i < len; i++)
     {
-        origin_voltage_sum += data_buf[i] & 0x0FFF;
-        origin_current_sum += data_buf[i] >> 16;
+        uint32_t v_raw = data_buf[i] & 0x0FFF;
+        uint32_t i_raw = data_buf[i] >> 16;
+
+        v_sum += v_raw;
+        i_sum += i_raw;
+
+        v_sq_sum += v_raw * v_raw;
+        i_sq_sum += i_raw * i_raw;
     }
 
-    v_dc_offset = origin_voltage_sum / (ADC_BUFFER_LENGTH / 2);
-    i_dc_offset = origin_current_sum / (ADC_BUFFER_LENGTH / 2);
+    // 循环外再转为浮点预算
+    float f_len = (float)len;
 
-    for(uint16_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
+    // 利用公式 Variance = (SumSq - (Sum * Sum) / N) / N
+    float v_var = ((float)v_sq_sum - ((float)v_sum * v_sum) / f_len) / f_len;
+    float i_var = ((float)i_sq_sum - ((float)i_sum * i_sum) / f_len) / f_len;
+
+    // 浮点精度可能导致微小的负数，防御性置零
+    if(v_var < 0.0f)
+        v_var = 0.0f;
+    if(i_var < 0.0f)
+        i_var = 0.0f;
+
+    // 常数可以在预编译期计算，避免运行时产生多余除法
+    // V coef = 3000.0f / 4095.0f * 39.25f;
+    // I coef = (3000.0f / 4095.0f) / 100.0f;
+#define V_RMS_COEF (28.467032967f)
+#define I_RMS_COEF (0.007326007f)
+
+    // now_voltage_mV = sqrtf(v_var) * V_RMS_COEF;
+    // now_current_A = sqrtf(i_var) * I_RMS_COEF;
+
+    // 1. 获取本次测量的原始值
+    float raw_voltage_mV = sqrtf(v_var) * V_RMS_COEF;
+    float raw_current_A = sqrtf(i_var) * I_RMS_COEF;
+
+    // 2. 动态初始化卡尔曼滤波器 (仅第1次执行)
+    // 使用第一次测量值作为初始状态可以加快滤波器的收敛速度
+    if(!is_kf_initialized)
     {
-        float v_ac_component = (float)(data_buf[i] & 0x0FFF) - v_dc_offset;
-        float i_ac_component = (float)(data_buf[i] >> 16) - i_dc_offset;
-        v_sum_squares += (v_ac_component * v_ac_component);
-        i_sum_squares += (i_ac_component * i_ac_component);
+        // 参数调整说明：
+        // Q越大，跟踪越快，滤波效果越弱；Q越小，系统越稳定，但存在滞后
+        // R越大，滤波效果越强，认为传感器噪声大；R越小，越相信传感器测量值
+        kalman_1d_init(&kf_voltage, raw_voltage_mV, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
+        kalman_1d_init(&kf_current, raw_current_A, 1.0f, 0.01f, 1.0f); // 电流Q=0.01, R=1.0
+        is_kf_initialized = 1;
     }
 
-    v_rms = sqrtf(v_sum_squares / (ADC_BUFFER_LENGTH / 2));
-    i_rms = sqrtf(i_sum_squares / (ADC_BUFFER_LENGTH / 2));
-
-    v_rms *= (3000.0f / 4095.0f * 39.25f);
-    i_rms *= ((3000.0f / 4095.0f) / 100.0f);
-    now_voltage_mV = v_rms;
-    now_current_A = i_rms;
+    // 3. 执行滤波，覆盖全局变量
+    now_voltage_mV = kalman_1d_update(&kf_voltage, raw_voltage_mV);
+    now_current_A = kalman_1d_update(&kf_current, raw_current_A);
 }
 
 
