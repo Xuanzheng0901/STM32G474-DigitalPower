@@ -126,8 +126,8 @@ float get_voltage_value(uint8_t index)
     return 0.0f;
 }
 
-static float last_last_voltage_mV = 0.0f;
-static float last_last_current_A = 0.0f;
+// static float last_last_voltage_mV = 0.0f;
+// static float last_last_current_A = 0.0f;
 
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
 static void adc_data_process(uint32_t *data_buf)
@@ -170,7 +170,7 @@ static void adc_data_process(uint32_t *data_buf)
     // 常数可以在预编译期计算，避免运行时产生多余除法
     // V coef = 3000.0f / 4095.0f * 39.25f;
     // I coef = (3000.0f / 4095.0f) / 100.0f;
-#define V_RMS_COEF (28.467032967f)
+#define V_RMS_COEF (28.5f)
 #define I_RMS_COEF (0.007326007f)
 
     // now_voltage_mV = sqrtf(v_var) * V_RMS_COEF;
@@ -203,11 +203,9 @@ static void PID_ctrl_routine(void *pvParameters)
     static uint32_t target_voltage_mV = 0;
     static uint32_t target_voltage_buffer_mV = 0;
 
-    static float next_output_voltage_mV = 0.0f;
+    static float output = 0.0f;
 
     static uint32_t *buf_ptr;
-
-    set_mod_ratio_by_factor(0.6f);
 
     while(1)
     {
@@ -226,12 +224,14 @@ static void PID_ctrl_routine(void *pvParameters)
             }
             adc_data_process(buf_ptr);
             //
-            // //4. 进行pid计算
-            // float error_mV = (float)target_voltage_mV - now_voltage_mV;
-            //
-            // pid_compute(pid_handle, error_mV, &next_output_voltage_mV);
-            // uint32_t output_duty = voltage_to_duty(next_output_voltage_mV);
-            // pwm_set_duty(output_duty);
+            //4. 进行pid计算
+            float error_mV = (float)target_voltage_mV - now_voltage_mV;
+
+            pid_compute(pid_handle, error_mV, &output);
+            if(output < 0.01f)
+                output = 0.0f;
+            set_mod_ratio_by_factor(output);
+            // LOGI("PID", "output: %.6f", output);
             HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
         }
     }
@@ -252,6 +252,10 @@ void pid_ctrl_init(void)
             .ki           = 0.06f,
             .kd           = 0.06f,
             .max_output   = 90000.0f,
+            .kp           = 0.00005f,
+            .ki           = 0.000005f,
+            .kd           = 0.00006f,
+            .max_output   = 0.96f,
             .min_output   = 0.0f,
             .max_integral = 1000000.0f,
             .min_integral = -1000000.0f,
