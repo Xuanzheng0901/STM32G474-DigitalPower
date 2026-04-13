@@ -14,12 +14,7 @@ QueueHandle_t pid_ctrl_queue_mV = NULL; //单位为mV
 static float now_current_A = 0.0f, now_voltage_mV = 0.0f;
 
 // --- 定义常量 ---
-#define PWM_PERIOD_ARR    PWM_Period
-#define INPUT_VOLTAGE_MV  30000.0f // 输入电压 (暂时假设30V)
-#define MAX_DUTY_RATIO    0.80f    // 最大占空比限制 (理论4倍升压)
-
 #define TABLE_SIZE 400
-#define PERIOD_VAL 34000
 
 volatile uint32_t SineTable[TABLE_SIZE];
 volatile uint32_t sin_index = 0;
@@ -31,17 +26,17 @@ void HAL_HRTIM_RepetitionEventCallback(HRTIM_HandleTypeDef *hhrtim, uint32_t Tim
     if(TimerIdx == HRTIM_TIMERINDEX_MASTER)
     {
         uint32_t duty_A = SineTable[sin_index] >> 1;
-        uint32_t duty_B = (PERIOD_VAL - SineTable[sin_index]) >> 1; // 34000 - duty_A
+        uint32_t duty_B = (PWM_Period - SineTable[sin_index]) >> 1; // 34000 - duty_A
 
         // 翻转 PC0 供示波器观察，如果 PC0 变成 20kHz 脉冲，说明中断完全正常
         // HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
 
         //  3. 写入 A 和 B 的占空比（绝不去改 Master 的 CMP1 寄存器）
-        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, 17000 - duty_A);
-        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, 17000 + duty_A);
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, (PWM_Period / 2) - duty_A);
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, (PWM_Period / 2) + duty_A);
 
-        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_1, 17000 - duty_B);
-        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, 17000 + duty_B);
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_1, (PWM_Period / 2) - duty_B);
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, (PWM_Period / 2) + duty_B);
 
         // sin_index++;
         if(++sin_index >= TABLE_SIZE)
