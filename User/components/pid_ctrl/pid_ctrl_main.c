@@ -8,9 +8,11 @@
 #include "kalman.h"
 
 extern QueueHandle_t adc_queue;
-
-static pid_ctrl_block_handle_t pid_handle = NULL;
 QueueHandle_t pid_ctrl_queue_mV = NULL; //单位为mV
+
+static pid_ctrl_block_handle_t vbus_pid_handle = NULL;    // 电压外环 (跑在 FreeRTOS)
+static pid_ctrl_block_handle_t current_pid_handle = NULL; // 电流内环 (跑在 HRTIM 极高频中断)
+
 static float now_current_A = 0.0f, now_voltage_mV = 0.0f;
 
 void HAL_HRTIM_RepetitionEventCallback(HRTIM_HandleTypeDef *hhrtim, uint32_t TimerIdx)
@@ -89,11 +91,11 @@ static void PID_ctrl_routine(void *pvParameters)
                 }
             }
             adc_data_process(buf_ptr);
-            
+
             //4. 进行pid计算
             float error_mV = (float)target_voltage_mV - now_voltage_mV;
 
-            pid_compute(pid_handle, error_mV, &output);
+            pid_compute(vbus_pid_handle, error_mV, &output);
             if(output < 0.01f)
                 output = 0.0f;
 
@@ -111,19 +113,34 @@ void pid_set_voltage(uint32_t mv)
 
 void pid_ctrl_init(void)
 {
-    pid_ctrl_config_t pid_cfg = {
+    pid_ctrl_config_t vbus_pid_cfg = {
         .init_param = {
             .kp           = 0.00005f,
             .ki           = 0.000005f,
             .kd           = 0.00006f,
             .max_output   = 0.96f,
             .min_output   = 0.0f,
-            .max_integral = 1000000.0f,
-            .min_integral = -1000000.0f,
+            .max_integral = 5.0f,
+            .min_integral = 0.0f,
+            .cal_type     = PID_CAL_TYPE_INCREMENTAL, // 或者位置式 (POSITIONAL)
+        }
+    };
+    pid_new_control_block(&vbus_pid_cfg, &vbus_pid_handle);
+
+    pid_ctrl_config_t current_pid_cfg = {
+        .init_param = {
+            .kp           = 0.05f,     // 电流环 Kp 需要大很多，快速响应
+            .ki           = 0.001f,
+            .kd           = 0.0f,
+            .max_output   = 0.95f,     // 最大占空比 95%
+            .min_output   = 0.0f,      // 最小占空比 0%
+            .max_integral = 0.5f,
+            .min_integral = -0.5f,
             .cal_type     = PID_CAL_TYPE_INCREMENTAL,
         }
     };
-    pid_new_control_block(&pid_cfg, &pid_handle);
+    pid_new_control_block(&current_pid_cfg, &current_pid_handle);
+
     pid_ctrl_queue_mV = xQueueCreate(6, sizeof(uint32_t));
     xTaskCreate(PID_ctrl_routine, "PID", 2048, NULL, 15, NULL);
     pid_set_voltage(0);
