@@ -7,6 +7,10 @@
 #include "queue.h"
 #include "kalman.h"
 
+// --- 全局共享变量（连接快环与慢环的桥梁） ---
+// 由电压慢环计算得出，供给电流快环使用，代表电感电流的幅值指令
+volatile float Global_Current_Ref_Amplitude = 0.0f;
+
 extern QueueHandle_t adc_queue;
 QueueHandle_t pid_ctrl_queue_mV = NULL; //单位为mV
 
@@ -70,9 +74,7 @@ static void PID_ctrl_routine(void *pvParameters)
 {
     static uint32_t target_voltage_mV = 0;
     static uint32_t target_voltage_buffer_mV = 0;
-
-    static float output = 0.0f;
-
+    static float current_amplitude_cmd = 0.0f; // 算出来的幅值指令
     static uint32_t *buf_ptr;
 
     while(1)
@@ -81,23 +83,27 @@ static void PID_ctrl_routine(void *pvParameters)
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) == pdTRUE)
         {
             HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
-            //2. 查询target是否改变
+
+            // 2. 查询是否修改了目标电压
             if(pdPASS == xQueueReceive(pid_ctrl_queue_mV, &target_voltage_buffer_mV, 0))
             {
                 if(target_voltage_mV != target_voltage_buffer_mV)
                 {
                     target_voltage_mV = target_voltage_buffer_mV;
-                    // pid_reset_ctrl_block(pid_handle); //使用增量式pid更改target后不能重置
                 }
             }
             adc_data_process(buf_ptr);
 
-            //4. 进行pid计算
+            // 4. 进行电压环 PID 计算
             float error_mV = (float)target_voltage_mV - now_voltage_mV;
 
-            pid_compute(vbus_pid_handle, error_mV, &output);
-            if(output < 0.01f)
-                output = 0.0f;
+            // 电压环计算出的是：需要给电流环多大的幅值
+            pid_compute(vbus_pid_handle, error_mV, &current_amplitude_cmd);
+            if(current_amplitude_cmd < 0.01f)
+                current_amplitude_cmd = 0.0f;
+
+            // 6. 更新全局变量，供底层的 HRTIM 中断使用
+            Global_Current_Ref_Amplitude = current_amplitude_cmd;
 
             HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
         }
@@ -118,7 +124,7 @@ void pid_ctrl_init(void)
             .kp           = 0.00005f,
             .ki           = 0.000005f,
             .kd           = 0.00006f,
-            .max_output   = 0.96f,
+            .max_output   = 5.0f, // 最大允许请求5A峰值电流
             .min_output   = 0.0f,
             .max_integral = 5.0f,
             .min_integral = 0.0f,
