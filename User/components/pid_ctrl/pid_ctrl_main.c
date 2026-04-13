@@ -37,16 +37,16 @@ static void adc_data_process(uint32_t *data_buf)
     static kalman_1d_state_t kf_current;
     static uint8_t is_kf_initialized = 0;
 
-    uint32_t v_raw = 0, i_raw = 0;
+    uint32_t u_raw = 0, i_raw = 0;
     uint16_t len = ADC_BUFFER_LENGTH / 2;
 
     for(uint16_t i = 0; i < len; i++)
     {
-        v_raw += data_buf[i] & 0x0FFF;
+        u_raw += data_buf[i] & 0x0FFF;
         i_raw += data_buf[i] >> 16;
     }
 
-    v_raw = v_raw * 14.652f / len;
+    u_raw = u_raw * 14.652f / len;
     i_raw = i_raw * 1.4652f / len;
 
     if(!is_kf_initialized)
@@ -54,12 +54,12 @@ static void adc_data_process(uint32_t *data_buf)
         // 参数调整说明：
         // Q越大，跟踪越快，滤波效果越弱；Q越小，系统越稳定，但存在滞后
         // R越大，滤波效果越强，认为传感器噪声大；R越小，越相信传感器测量值
-        kalman_1d_init(&kf_voltage, v_raw, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
+        kalman_1d_init(&kf_voltage, u_raw, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
         kalman_1d_init(&kf_current, i_raw, 1.0f, 0.01f, 1.0f); // 电流Q=0.01, R=1.0
         is_kf_initialized = 1;
     }
 
-    now_voltage_mV = kalman_1d_update(&kf_voltage, v_raw);
+    now_voltage_mV = kalman_1d_update(&kf_voltage, u_raw);
     now_current_A = kalman_1d_update(&kf_current, i_raw);
 }
 
