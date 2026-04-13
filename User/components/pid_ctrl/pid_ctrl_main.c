@@ -248,10 +248,6 @@ void pid_ctrl_init(void)
 {
     pid_ctrl_config_t pid_cfg = {
         .init_param = {
-            .kp           = 0.1f,
-            .ki           = 0.06f,
-            .kd           = 0.06f,
-            .max_output   = 90000.0f,
             .kp           = 0.00005f,
             .ki           = 0.000005f,
             .kd           = 0.00006f,
