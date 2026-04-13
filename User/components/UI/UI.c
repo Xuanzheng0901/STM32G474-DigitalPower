@@ -78,7 +78,7 @@ static void indev_init(void)
     iot_button_create_gpio(&btn_cfg, &gpio_cfg, &btn_handle);
 
     knob_config_t knob_cfg = {
-        .default_direction = 0,
+        .default_direction = 1,
         .htim              = &htim2,
     };
     lvgl_port_encoder_cfg_t encoder_cfg = {
