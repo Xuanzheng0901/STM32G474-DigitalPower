@@ -23,7 +23,35 @@ void HAL_HRTIM_RepetitionEventCallback(HRTIM_HandleTypeDef *hhrtim, uint32_t Tim
 {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
     if(TimerIdx == HRTIM_TIMERINDEX_MASTER)
-    {}
+    {
+        // 1. 获取【瞬时】交流输入电压形状 (馒头波) 和【瞬时】电感电流
+        // 注意：这里必须读取被 HRTIM 硬件触发采样的 ADC 寄存器！不能用 DMA 里的数据！
+        // // 以下为占位函数，请替换为你实际的 ADC 寄存器读取代码，例如：
+        // // float vac_instant = (float)HAL_ADCEx_InjectedGetValue(&hadc2, ADC_INJECTED_RANK_1) * 转换系数;
+        float vac_instant = Read_ADC_Instant_Vac();
+        float il_instant = Read_ADC_Instant_IL();
+
+        // 2. 提取电网电压形状 (取绝对值，保证是馒头波)
+        float vac_shape = fabsf(vac_instant);
+
+        // 3. 核心乘法器：目标瞬时电流 = 电网电压形状 * 电流幅值指令(来自电压外环)
+        float target_il_instant = vac_shape * Global_Current_Ref_Amplitude;
+
+        // 4. 执行电流环 PID 计算
+        float duty_cycle = 0.0f;
+        float error_i = target_il_instant - il_instant;
+        pid_compute(current_pid_handle, error_i, &duty_cycle);
+
+        // 5. 占空比限幅保护 (Boost PFC 占空比在 0 ~ 0.95 之间)
+        if(duty_cycle > 0.95f)
+            duty_cycle = 0.95f;
+        if(duty_cycle < 0.0f)
+            duty_cycle = 0.0f;
+
+        // 6. 将计算结果写入 HRTIM 寄存器更新 PWM (假设驱动 TIMER_A)
+        uint32_t compare_val = (uint32_t)(duty_cycle * PWM_Period);
+        __HAL_HRTIM_SETCOMPARE(hhrtim, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, compare_val);
+    }
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
 }
 
