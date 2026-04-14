@@ -3,6 +3,7 @@
 #include <math.h>
 #include "hrtim.h"
 #include "main.h"
+#include "adc.h"
 #include "task.h"
 #include "queue.h"
 #include "kalman.h"
@@ -28,8 +29,8 @@ void HAL_HRTIM_RepetitionEventCallback(HRTIM_HandleTypeDef *hhrtim, uint32_t Tim
         // 注意：这里必须读取被 HRTIM 硬件触发采样的 ADC 寄存器！不能用 DMA 里的数据！
         // // 以下为占位函数，请替换为你实际的 ADC 寄存器读取代码，例如：
         // // float vac_instant = (float)HAL_ADCEx_InjectedGetValue(&hadc2, ADC_INJECTED_RANK_1) * 转换系数;
-        float vac_instant = Read_ADC_Instant_Vac();
-        float il_instant = Read_ADC_Instant_IL();
+        uint16_t vac_instant = HAL_ADCEx_InjectedGetValue(&hadc3, ADC_INJECTED_RANK_1);
+        uint16_t il_instant = HAL_ADCEx_InjectedGetValue(&hadc4, ADC_INJECTED_RANK_1);
 
         // 2. 提取电网电压形状 (取绝对值，保证是馒头波)
         float vac_shape = fabsf(vac_instant);
