@@ -26,21 +26,24 @@ void HAL_HRTIM_RepetitionEventCallback(HRTIM_HandleTypeDef *hhrtim, uint32_t Tim
     if(TimerIdx == HRTIM_TIMERINDEX_MASTER)
     {
         // 1. 获取【瞬时】交流输入电压形状 (馒头波) 和【瞬时】电感电流
-        // 注意：这里必须读取被 HRTIM 硬件触发采样的 ADC 寄存器！不能用 DMA 里的数据！
-        // // 以下为占位函数，请替换为你实际的 ADC 寄存器读取代码，例如：
         // // float vac_instant = (float)HAL_ADCEx_InjectedGetValue(&hadc2, ADC_INJECTED_RANK_1) * 转换系数;
         uint16_t vac_instant = HAL_ADCEx_InjectedGetValue(&hadc3, ADC_INJECTED_RANK_1);
         uint16_t il_instant = HAL_ADCEx_InjectedGetValue(&hadc4, ADC_INJECTED_RANK_1);
 
         // 2. 提取电网电压形状 (取绝对值，保证是馒头波)
-        float vac_shape = fabsf(vac_instant);
+        float vac_shape = (float)vac_instant / 4095.0f; // 归一化到 0~1
 
         // 3. 核心乘法器：目标瞬时电流 = 电网电压形状 * 电流幅值指令(来自电压外环)
+        // target_il_instant 单位为 A
         float target_il_instant = vac_shape * Global_Current_Ref_Amplitude;
+
+        // 需要将当前电感电流的ADC值也转换为 A，才能与 target_il_instant 比较
+        // 这里假设转换系数为 1.4652f (参考 adc_data_process 中的系数)
+        float il_instant_A = (float)il_instant * 1.4652f / (ADC_BUFFER_LENGTH / 2.0f); // 注意这里的系数要和实际对应
 
         // 4. 执行电流环 PID 计算
         float duty_cycle = 0.0f;
-        float error_i = target_il_instant - il_instant;
+        float error_i = target_il_instant - il_instant_A;
         pid_compute(current_pid_handle, error_i, &duty_cycle);
 
         // 5. 占空比限幅保护 (Boost PFC 占空比在 0 ~ 0.95 之间)
@@ -72,30 +75,30 @@ static void adc_data_process(uint32_t *data_buf)
     static kalman_1d_state_t kf_current;
     static uint8_t is_kf_initialized = 0;
 
-    uint32_t u_raw = 0, i_raw = 0;
+    uint32_t u_sum = 0, i_sum = 0;
     uint16_t len = ADC_BUFFER_LENGTH / 2;
 
     for(uint16_t i = 0; i < len; i++)
     {
-        u_raw += data_buf[i] & 0x0FFF;
-        i_raw += data_buf[i] >> 16;
+        u_sum += data_buf[i] & 0x0FFF;
+        i_sum += data_buf[i] >> 16;
     }
 
-    u_raw = u_raw * 14.652f / len;
-    i_raw = i_raw * 1.4652f / len;
+    float u_raw_f = (float)u_sum * 14.652f / len;
+    float i_raw_f = (float)i_sum * 1.4652f / len;
 
     if(!is_kf_initialized)
     {
         // 参数调整说明：
         // Q越大，跟踪越快，滤波效果越弱；Q越小，系统越稳定，但存在滞后
         // R越大，滤波效果越强，认为传感器噪声大；R越小，越相信传感器测量值
-        kalman_1d_init(&kf_voltage, u_raw, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
-        kalman_1d_init(&kf_current, i_raw, 1.0f, 0.01f, 1.0f); // 电流Q=0.01, R=1.0
+        kalman_1d_init(&kf_voltage, u_raw_f, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
+        kalman_1d_init(&kf_current, i_raw_f, 1.0f, 0.01f, 1.0f); // 电流Q=0.01, R=1.0
         is_kf_initialized = 1;
     }
 
-    now_voltage_mV = kalman_1d_update(&kf_voltage, u_raw);
-    now_current_A = kalman_1d_update(&kf_current, i_raw);
+    now_voltage_mV = kalman_1d_update(&kf_voltage, u_raw_f);
+    now_current_A = kalman_1d_update(&kf_current, i_raw_f);
 }
 
 
