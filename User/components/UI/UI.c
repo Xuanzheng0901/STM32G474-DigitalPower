@@ -6,6 +6,7 @@
 #include "lv_port_encoder.h"
 #include "tim.h"
 #include "PID.h"
+#include "hrtim.h"
 
 LV_FONT_DECLARE(chillbit);
 
@@ -32,7 +33,18 @@ static void lvgl_event_cb(lv_event_t *evt)
     // // ESP_LOGI(TAG, "Value changed: %ld", value);
     if(lv_event_get_current_target(evt) == voltage_spinbox)
     {
-        pid_set_voltage(value * 10);
+        uint32_t period = (uint32_t)(1.36e9 / (value * 1000.0f));
+        uint32_t offset = (uint32_t)((float)period / 6.0f);
+ __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_MASTER, period);
+        __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, period);
+        __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, period);
+
+        __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, period / 2);
+        __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, period / 2);
+
+        __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_1, offset);
+
+        // pid_set_voltage(value * 10);
         // snprintf(value_buf[0], 32, "%ld", value);
         // lv_obj_invalidate(voltage_label);
     }
@@ -145,7 +157,7 @@ static void home_page_init(void)
 
         //电压调整框
         voltage_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(voltage_spinbox, 0, 2500);
+        lv_spinbox_set_range(voltage_spinbox, 25, 60);
         lv_spinbox_set_digit_format(voltage_spinbox, 4, 2);
         lv_spinbox_set_step(voltage_spinbox, 1);
 
