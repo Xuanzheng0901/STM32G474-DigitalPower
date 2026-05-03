@@ -20,7 +20,7 @@ static xQueueHandle log_mem_pool_queue = NULL;  //存放内存池指针的队列
 static xSemaphoreHandle log_uart_sem = NULL;   //USART/DMA信号量
 static TaskHandle_t log_task_handle = NULL;
 
-static log_data_t log_mem_pool[LOG_MEM_POOL_SIZE];
+static log_data_t log_mem_pool[LOG_MEM_POOL_SIZE]; //内存池
 
 static uint32_t get_time_ms(void)
 {
@@ -92,6 +92,12 @@ void log_set_level(log_level_t level)
     s_log_level = level;
 }
 
+/**
+ * @brief 调用log_format_message()构造日志字符串并将其交给发送任务
+ * @param level 日志等级
+ * @param tag 日志标签
+ * @param format 格式化字符串
+ */
 void log_write(log_level_t level, const char *tag, const char *format, ...)
 {
     if(level > s_log_level || log_queue == NULL)
@@ -127,6 +133,10 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
+/**
+ * @brief 日志发送服务任务
+ * @note  阻塞的队列接收和任务通知接收可保证同一时间只有一个日志在发送过程
+ */
 void log_send_task(void *args)
 {
     log_data_t *recv_buf_ptr = NULL;
