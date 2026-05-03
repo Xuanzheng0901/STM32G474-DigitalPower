@@ -38,7 +38,7 @@ static void lvgl_event_cb(lv_event_t *evt)
     }
     else if(lv_event_get_current_target(evt) == current_spinbox)
     {
-        // set_current(value * 10);
+        pid_set_current_limit(value * 10);
         // snprintf(value_buf[1], 32, "%ld", value);
         // lv_obj_invalidate(current_label);
     }
@@ -145,7 +145,7 @@ static void home_page_init(void)
 
         //电压调整框
         voltage_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(voltage_spinbox, 0, 2500);
+        lv_spinbox_set_range(voltage_spinbox, 0, 5000);
         lv_spinbox_set_digit_format(voltage_spinbox, 4, 2);
         lv_spinbox_set_step(voltage_spinbox, 1);
 
@@ -175,9 +175,10 @@ static void home_page_init(void)
 
         //电流调整框
         current_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(current_spinbox, 0, 400);
+        lv_spinbox_set_range(current_spinbox, 0, 600);
         lv_spinbox_set_digit_format(current_spinbox, 3, 1);
         lv_spinbox_set_step(current_spinbox, 1);
+        lv_spinbox_set_value(current_spinbox, 100);
 
         lv_obj_set_content_height(current_spinbox, 12);
 

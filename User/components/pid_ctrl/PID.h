@@ -8,4 +8,6 @@ float get_voltage_value(uint8_t index);
 
 void pid_set_voltage(uint32_t mv);
 
+void pid_set_current_limit(uint32_t ma);
+
 #endif //G474_1_PID_H

@@ -8,8 +8,10 @@
 
 extern QueueHandle_t adc_queue;
 
-static pid_ctrl_block_handle_t pid_handle = NULL;
+static pid_ctrl_block_handle_t v_pid_handle = NULL;
+static pid_ctrl_block_handle_t i_pid_handle = NULL;
 QueueHandle_t pid_ctrl_queue_mV = NULL; //单位为mV
+QueueHandle_t pid_ctrl_queue_mA = NULL; //单位为mA (限流)
 static float now_current_A = 0.0f, now_voltage_mV = 0.0f;
 
 // --- 定义常量 ---
@@ -82,14 +84,14 @@ static inline void adc_data_process(uint32_t *data_buf)
     // origin_voltage_sum / 4095 * 3300 / 20(样本量) = adc引脚上的电压
     // * 20 = 运放输入电压(运放20分压)
     // * 1.0079(adc误差修正)
-    float temp_voltage_mV = origin_voltage_sum * 3300.0f / 4095.0f / (float)(ADC_BUFFER_LENGTH / 2) * 20.0f *
-                            1.0079f;
+    float temp_voltage_mV = origin_voltage_sum * 3000.0f / 4095.0f / (float)(ADC_BUFFER_LENGTH / 2) * 20.0f * 1.0048f;
+    if(temp_voltage_mV < 0.0f)
+    {
+        temp_voltage_mV = 0.0f;
+    }
 
-    float temp_current_A = origin_current_sum * 3300.0f / 4095.0f / (ADC_BUFFER_LENGTH / 2) * 2.0f / 1050.0f; //单位mA
-
-    //对均值进行二阶rc滤波
-    temp_voltage_mV = RC_ALPHA_DENO_1 * temp_voltage_mV + RC_ALPHA_DENO_2 * now_voltage_mV +
-                      RC_ALPHA_DENO_3 * last_last_voltage_mV;
+    float temp_current_A = origin_current_sum * 3000.0f / 4095.0f / (float)(ADC_BUFFER_LENGTH / 2) * 2.0f /
+                           1020.0f; //单位mA
 
     //对均值进行卡尔曼滤波
     if(!is_kf_initialized)
@@ -113,6 +115,9 @@ static void PID_ctrl_routine(void *pvParameters)
     static uint32_t target_voltage_mV = 0;
     static uint32_t target_voltage_buffer_mV = 0;
 
+    static uint32_t target_current_mA = 1000; // 默认限流1000mA
+    static uint32_t target_current_buffer_mA = 0;
+
     static float next_output_voltage_mV = 0.0f;
 
     static uint32_t *buf_ptr;
@@ -127,15 +132,47 @@ static void PID_ctrl_routine(void *pvParameters)
                 if(target_voltage_mV != target_voltage_buffer_mV)
                 {
                     target_voltage_mV = target_voltage_buffer_mV;
-                    // pid_reset_ctrl_block(pid_handle); //使用增量式pid更改target后不能重置
                 }
             }
+            if(pdPASS == xQueueReceive(pid_ctrl_queue_mA, &target_current_buffer_mA, 0))
+            {
+                if(target_current_mA != target_current_buffer_mA)
+                {
+                    target_current_mA = target_current_buffer_mA;
+                }
+            }
+
+            //3. 数据处理
             adc_data_process(buf_ptr);
 
-            //4. 进行pid计算
+            //4. 进行双环pid计算 (使用增量式PID并取最小值的方式实现CV/CC切换)
             float error_mV = (float)target_voltage_mV - now_voltage_mV;
+            float error_mA = (float)target_current_mA - now_current_A * 1000.0f;
 
-            pid_compute(pid_handle, error_mV, &next_output_voltage_mV);
+            float v_pid_out = 0.0f;
+            float i_pid_out = 0.0f;
+
+            // 计算电压环输出
+            pid_compute(v_pid_handle, error_mV, &v_pid_out);
+            // 计算电流环输出
+            pid_compute(i_pid_handle, error_mA, &i_pid_out);
+
+            // 比较并选取较小的输出作为最终目标输出 (CV/CC 限流控制)
+            if(i_pid_out < v_pid_out)
+            {
+                // CC 恒流模式接管
+                next_output_voltage_mV = i_pid_out;
+                // 防止电压环出现积分饱和（跟踪恒流输出）
+                pid_set_tracking_output(v_pid_handle, next_output_voltage_mV);
+            }
+            else
+            {
+                // CV 恒压模式
+                next_output_voltage_mV = v_pid_out;
+                // 防止电流环出现积分饱和（跟踪恒压输出）
+                pid_set_tracking_output(i_pid_handle, next_output_voltage_mV);
+            }
+
             uint32_t output_duty = voltage_to_duty(next_output_voltage_mV);
             pwm_set_duty(output_duty);
         }
@@ -147,6 +184,13 @@ void pid_set_voltage(uint32_t mv)
     if(NULL == pid_ctrl_queue_mV)
         return;
     xQueueSend(pid_ctrl_queue_mV, &mv, portMAX_DELAY);
+}
+
+void pid_set_current_limit(uint32_t ma)
+{
+    if(NULL == pid_ctrl_queue_mA)
+        return;
+    xQueueSend(pid_ctrl_queue_mA, &ma, portMAX_DELAY);
 }
 
 void pid_ctrl_init(void)
@@ -163,8 +207,19 @@ void pid_ctrl_init(void)
             .cal_type     = PID_CAL_TYPE_INCREMENTAL,
         }
     };
-    pid_new_control_block(&pid_cfg, &pid_handle);
+    pid_ctrl_config_t i_pid_cfg = pid_cfg;
+    // 电流环参数可以根据实际系统响应做调节，这里初始化一个参考值
+    i_pid_cfg.init_param.kp = 0.5f;
+    i_pid_cfg.init_param.ki = 0.1f;
+    i_pid_cfg.init_param.kd = 0.0f;
+
+    pid_new_control_block(&pid_cfg, &v_pid_handle);
+    pid_new_control_block(&i_pid_cfg, &i_pid_handle);
+
     pid_ctrl_queue_mV = xQueueCreate(6, sizeof(uint32_t));
+    pid_ctrl_queue_mA = xQueueCreate(6, sizeof(uint32_t));
+
     xTaskCreate(PID_ctrl_routine, "PID", 2048, NULL, 15, NULL);
     pid_set_voltage(0);
+    pid_set_current_limit(1000); // 默认限流 1A
 }

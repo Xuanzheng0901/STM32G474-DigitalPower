@@ -162,3 +162,13 @@ HAL_StatusTypeDef pid_reset_ctrl_block(pid_ctrl_block_handle_t pid)
     pid->last_output = 0;
     return HAL_OK;
 }
+
+HAL_StatusTypeDef pid_set_tracking_output(pid_ctrl_block_handle_t pid, float track_val)
+{
+    if(pid == NULL)
+    {
+        return HAL_ERROR;
+    }
+    pid->last_output = track_val;
+    return HAL_OK;
+}

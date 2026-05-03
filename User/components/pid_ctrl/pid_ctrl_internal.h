@@ -105,3 +105,14 @@ HAL_StatusTypeDef pid_compute(pid_ctrl_block_handle_t pid, float input_error, fl
  *      - ESP_ERR_INVALID_ARG: Reset failed because of invalid argument
  */
 HAL_StatusTypeDef pid_reset_ctrl_block(pid_ctrl_block_handle_t pid);
+
+/**
+ * @brief Set the tracking output for PID controller (anti-windup for cascaded/selective loops)
+ *
+ * @param[in] pid PID control block handle
+ * @param[in] track_val The actual system output value to track
+ * @return
+ *      - HAL_OK: Set tracking output successfully
+ *      - HAL_ERROR: Invalid argument
+ */
+HAL_StatusTypeDef pid_set_tracking_output(pid_ctrl_block_handle_t pid, float track_val);
