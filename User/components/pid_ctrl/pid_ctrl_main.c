@@ -4,6 +4,7 @@
 #include "main.h"
 #include "task.h"
 #include "queue.h"
+#include "kalman.h"
 
 extern QueueHandle_t adc_queue;
 
@@ -68,6 +69,10 @@ static float last_last_current_A = 0.0f;
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
 static inline void adc_data_process(uint32_t *data_buf)
 {
+    static uint8_t is_kf_initialized = 0;
+    static kalman_1d_state_t kf_voltage;
+    static kalman_1d_state_t kf_current;
+
     float origin_voltage_sum = 0.0f, origin_current_sum = 0.0f;
     for(uint8_t i = 0; i < ADC_BUFFER_LENGTH / 2; i++)
     {
@@ -86,14 +91,20 @@ static inline void adc_data_process(uint32_t *data_buf)
     temp_voltage_mV = RC_ALPHA_DENO_1 * temp_voltage_mV + RC_ALPHA_DENO_2 * now_voltage_mV +
                       RC_ALPHA_DENO_3 * last_last_voltage_mV;
 
-    temp_current_A = RC_ALPHA_DENO_1 * temp_current_A + RC_ALPHA_DENO_2 * now_current_A +
-                     RC_ALPHA_DENO_3 * last_last_current_A;
+    //对均值进行卡尔曼滤波
+    if(!is_kf_initialized)
+    {
+        // 参数调整说明：
+        // Q越大，跟踪越快，滤波效果越弱；Q越小，系统越稳定，但存在滞后
+        // R越大，滤波效果越强，认为传感器噪声大；R越小，越相信传感器测量值
+        kalman_1d_init(&kf_voltage, temp_voltage_mV, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
+        kalman_1d_init(&kf_current, temp_current_A, 1.0f, 0.01f, 1.0f); // 电流Q=0.01, R=1.0
+        is_kf_initialized = 1;
+    }
 
-    last_last_voltage_mV = now_voltage_mV;
-    last_last_current_A = now_current_A;
-
-    now_voltage_mV = temp_voltage_mV;
-    now_current_A = temp_current_A;
+    // 3. 执行滤波，覆盖全局变量
+    now_voltage_mV = kalman_1d_update(&kf_voltage, temp_voltage_mV);
+    now_current_A = kalman_1d_update(&kf_current, temp_current_A);
 }
 
 
