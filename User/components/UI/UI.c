@@ -27,22 +27,17 @@ lv_obj_t *current_spinbox = NULL;
 
 static char value_buf[3][32] = {"0.00", "0.00", "00.00W"};
 
+extern void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree);
+
 static void lvgl_event_cb(lv_event_t *evt)
 {
+    static uint32_t freq = 100000;
+    static int16_t phase = 0;
     int32_t value = lv_spinbox_get_value(lv_event_get_current_target(evt));
     // // ESP_LOGI(TAG, "Value changed: %ld", value);
     if(lv_event_get_current_target(evt) == voltage_spinbox)
     {
-        uint32_t period = (uint32_t)(1.36e9 / (value * 1000.0f));
-        uint32_t offset = (uint32_t)((float)period / 6.0f);
- __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_MASTER, period);
-        __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, period);
-        __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, period);
-
-        __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, period / 2);
-        __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, period / 2);
-
-        __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_1, offset);
+        freq = value * 1000;
 
         // pid_set_voltage(value * 10);
         // snprintf(value_buf[0], 32, "%ld", value);
@@ -50,10 +45,12 @@ static void lvgl_event_cb(lv_event_t *evt)
     }
     else if(lv_event_get_current_target(evt) == current_spinbox)
     {
+        phase = value;
         // set_current(value * 10);
         // snprintf(value_buf[1], 32, "%ld", value);
         // lv_obj_invalidate(current_label);
     }
+    set_hrtim_prop(freq, phase);
 }
 
 static void value_update_task(void *arg)
@@ -157,7 +154,7 @@ static void home_page_init(void)
 
         //电压调整框
         voltage_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(voltage_spinbox, 25, 60);
+        lv_spinbox_set_range(voltage_spinbox, 20, 600);
         lv_spinbox_set_digit_format(voltage_spinbox, 4, 2);
         lv_spinbox_set_step(voltage_spinbox, 1);
 
@@ -187,7 +184,7 @@ static void home_page_init(void)
 
         //电流调整框
         current_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(current_spinbox, 0, 400);
+        lv_spinbox_set_range(current_spinbox, -80, 80);
         lv_spinbox_set_digit_format(current_spinbox, 3, 1);
         lv_spinbox_set_step(current_spinbox, 1);
 
