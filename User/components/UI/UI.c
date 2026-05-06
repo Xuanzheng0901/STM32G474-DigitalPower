@@ -157,6 +157,7 @@ static void home_page_init(void)
         lv_spinbox_set_range(voltage_spinbox, 20, 600);
         lv_spinbox_set_digit_format(voltage_spinbox, 4, 2);
         lv_spinbox_set_step(voltage_spinbox, 1);
+        lv_spinbox_set_value(voltage_spinbox, 100);
 
         lv_obj_set_content_height(voltage_spinbox, 12);
 
@@ -187,6 +188,7 @@ static void home_page_init(void)
         lv_spinbox_set_range(current_spinbox, -80, 80);
         lv_spinbox_set_digit_format(current_spinbox, 3, 1);
         lv_spinbox_set_step(current_spinbox, 1);
+        lv_spinbox_set_value(current_spinbox, 20);
 
         lv_obj_set_content_height(current_spinbox, 12);
 
