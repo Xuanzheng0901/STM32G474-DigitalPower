@@ -4,6 +4,7 @@
 
 #include <math.h>
 
+#include "console.h"
 #include "task.h"
 #include "stdio_ext.h"
 #include "string.h"
@@ -34,12 +35,9 @@ void app_main(void)
     ui_init();
     pid_ctrl_init();
     ADC_init();
+    console_init();
 
-    HAL_HRTIM_WaveformCountStart(&hhrtim1,HRTIM_TIMERID_TIMER_A);
-    HAL_HRTIM_WaveformCountStart(&hhrtim1,HRTIM_TIMERID_TIMER_B);
-    HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
-    HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TB2);
-
-    HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_MASTER);
-    HAL_HRTIM_SimpleBaseStart(&hhrtim1, HRTIM_TIMERINDEX_MASTER);
+    HAL_HRTIM_WaveformCountStart(&hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
+    HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2 | HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TB2);
+    // HAL_HRTIM_SimpleBaseStart(&hhrtim1, HRTIM_TIMERINDEX_MASTER);
 }
