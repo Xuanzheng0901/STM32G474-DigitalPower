@@ -18,7 +18,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
     if(huart->Instance == USART3)
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        // 使用 IPC (任务通知) 唤醒处理任务
         vTaskNotifyGiveFromISR(consoleTaskHandle, &xHigherPriorityTaskWoken);
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
@@ -26,13 +25,11 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 
 static void console_task(void *pvParameters)
 {
-    // 第一次启动空闲中断接收 (DMA模式)
     HAL_UARTEx_ReceiveToIdle_DMA(&huart3, console_rx_buf, CONSOLE_RX_BUF_SIZE);
 
     while(1)
     {
         uint32_t ulNotificationValue;
-        // 等待 IPC 任务通知（由空闲中断触发）
         if(xTaskNotifyWait(0, portMAX_DELAY, &ulNotificationValue, portMAX_DELAY) == pdTRUE)
         {
             uint32_t freq = 0;
@@ -46,7 +43,6 @@ static void console_task(void *pvParameters)
                 if(freq > 0)
                 {
                     set_hrtim_prop(freq, phase);
-                    LOGI("CONSOLE", "Set Freq: %lu Hz, Phase: %hd deg", freq, phase);
                 }
             }
             else
@@ -54,10 +50,7 @@ static void console_task(void *pvParameters)
                 LOGI("CONSOLE", "Parse error. Input: %s", console_rx_buf);
             }
 
-            // 清空缓冲区防止受上次接收影响
             memset(console_rx_buf, 0, CONSOLE_RX_BUF_SIZE);
-
-            // 重新开启下一次包含 Idle 事件的 DMA 接收
             HAL_UARTEx_ReceiveToIdle_DMA(&huart3, console_rx_buf, CONSOLE_RX_BUF_SIZE);
         }
     }
