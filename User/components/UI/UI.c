@@ -237,6 +237,11 @@ static void home_page_init(void)
         lv_obj_set_style_text_font(my_label, &chillbit, 0);
         lv_obj_align(my_label, LV_ALIGN_BOTTOM_LEFT, 0, 0);
         lv_obj_set_width(my_label, 128);
+
+        // 主动发送一个值改变事件以应用初值
+        lv_obj_send_event(voltage_spinbox, LV_EVENT_VALUE_CHANGED, NULL);
+        lv_obj_send_event(current_spinbox, LV_EVENT_VALUE_CHANGED, NULL);
+
         lvgl_port_unlock();
     }
 }
