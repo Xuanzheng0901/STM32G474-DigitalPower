@@ -10,7 +10,7 @@
 extern QueueHandle_t adc_queue;
 
 static pid_ctrl_block_handle_t pid_handle = NULL;
-QueueHandle_t pid_ctrl_queue_mV = NULL; //单位为mV
+QueueHandle_t pid_ctrl_queue_mA = NULL; //单位为mV
 static float now_current_A = 0.0f, now_voltage_mV = 0.0f;
 
 static float fai_A = 0.0f, fai_B = 0.0f, fai_C = 0.0f;
@@ -76,7 +76,7 @@ void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree)
     HAL_HRTIM_WaveformCountStart(&hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
     HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2 | HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TB2);
 
-    LOGI("HRTIM", "Freq: %lu Hz, Phase: %hd deg", freq, phase_shift_degree);
+    // LOGI("HRTIM", "Freq: %lu Hz, Phase: %hd deg", freq, phase_shift_degree);
 }
 
 static float AC_data_process(uint32_t *buf_ptr, uint32_t data_len, uint8_t data_offset, float COEF)
@@ -162,7 +162,7 @@ static void PID_ctrl_routine(void *pvParameters)
         {
             HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
             //2. 查询target是否改变
-            if(pdPASS == xQueueReceive(pid_ctrl_queue_mV, &target_voltage_buffer_mV, 0))
+            if(pdPASS == xQueueReceive(pid_ctrl_queue_mA, &target_voltage_buffer_mV, 0))
             {
                 if(target_voltage_mV != target_voltage_buffer_mV)
                 {
@@ -185,11 +185,13 @@ static void PID_ctrl_routine(void *pvParameters)
     }
 }
 
-void pid_set_voltage(uint32_t mv)
+void pid_set_voltage(uint32_t mA)
 {
-    if(NULL == pid_ctrl_queue_mV)
+    static uint32_t mA_buf;
+    if(NULL == pid_ctrl_queue_mA)
         return;
-    xQueueSend(pid_ctrl_queue_mV, &mv, portMAX_DELAY);
+    mA_buf = mA;
+    xQueueSend(pid_ctrl_queue_mA, &mA_buf, portMAX_DELAY);
 }
 
 void pid_ctrl_init(void)
