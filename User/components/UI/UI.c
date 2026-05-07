@@ -344,38 +344,9 @@ static void home_page_init(void)
         lv_group_add_obj(group, current_spinbox);
         lv_obj_add_event_cb(current_spinbox, lvgl_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-        // 创建焦点高亮框
-        highlight_frame = lv_obj_create(lv_screen_active());
-        lv_obj_set_size(highlight_frame, 35, 14);
-        lv_obj_align(highlight_frame, LV_ALIGN_TOP_LEFT, 34, 16);
-
-        // 设置高亮框样式
-        lv_obj_set_style_bg_opa(highlight_frame, LV_OPA_TRANSP, 0); // 背景透明，不遮挡内容
-        lv_obj_set_style_border_width(highlight_frame, 1, 0);
-        lv_obj_set_style_border_color(highlight_frame, lv_color_black(), 0); // 黑色边框，适合白色背景
-        lv_obj_set_style_border_opa(highlight_frame, LV_OPA_80, 0);
-        lv_obj_set_style_radius(highlight_frame, 4, 0); // 增加圆角
-        lv_obj_set_style_pad_all(highlight_frame, 0, 0);
-
-        // 设置高亮框不可点击，避免干扰交互，并移到后层避免遮挡
-        lv_obj_add_flag(highlight_frame, LV_OBJ_FLAG_FLOATING);
-        lv_obj_clear_flag(highlight_frame, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_move_to_index(highlight_frame, 0); // 移到最底层
-
-        // 为spinbox控件添加焦点事件
-        lv_obj_add_event_cb(voltage_spinbox, focus_event_cb, LV_EVENT_FOCUSED, NULL);
-        lv_obj_add_event_cb(current_spinbox, focus_event_cb, LV_EVENT_FOCUSED, NULL);
-
-
-        lv_obj_t *my_label = lv_label_create(lv_scr_act());
-        lv_label_set_text(my_label, "电压电流");
-        lv_obj_set_style_text_font(my_label, &chillbit, 0);
-        lv_obj_align(my_label, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-        lv_obj_set_width(my_label, 128);
-
-        // 主动发送一个值改变事件以应用初值
-        lv_obj_send_event(voltage_spinbox, LV_EVENT_VALUE_CHANGED, NULL);
-        lv_obj_send_event(current_spinbox, LV_EVENT_VALUE_CHANGED, NULL);
+        // // 主动发送一个值改变事件以应用初值
+        // lv_obj_send_event(voltage_spinbox, LV_EVENT_VALUE_CHANGED, NULL);
+        // lv_obj_send_event(current_spinbox, LV_EVENT_VALUE_CHANGED, NULL);
 
         lvgl_port_unlock();
     }
