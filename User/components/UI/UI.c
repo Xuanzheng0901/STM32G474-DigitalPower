@@ -28,7 +28,54 @@ lv_obj_t *voltage_spinbox = NULL;
 lv_obj_t *current_spinbox = NULL;
 
 static char value_buf[3][32] = {"0.00", "0.00", "00.00W"};
+static char value_buf[2][3][32] = {{"10.00", "1.00", "10.00"}, {"15.00", "2.00", "30.00"}};
+static const char *mode_text[] = {"-", "→", "←", "↔", NULL};
+static char status_buf[16] = "预充电";
+mode_t current_mode = MODE_1TO2;
 
+static void init_spinbox_style(void)
+{
+    static bool inited = false;
+    if(inited)
+        return;
+
+    lv_style_init(&style_spinbox_main);
+    lv_style_set_pad_all(&style_spinbox_main, -1);
+    lv_style_set_border_width(&style_spinbox_main, 1);
+    lv_style_set_border_side(&style_spinbox_main, LV_BORDER_SIDE_BOTTOM);
+    lv_style_set_border_opa(&style_spinbox_main, 0);
+    lv_style_set_radius(&style_spinbox_main, 0);
+    lv_style_set_text_align(&style_spinbox_main, LV_TEXT_ALIGN_CENTER);
+
+    lv_style_init(&style_spinbox_focus);
+    lv_style_set_outline_width(&style_spinbox_focus, 0);
+    lv_style_set_border_opa(&style_spinbox_focus, LV_OPA_COVER);
+    lv_style_set_border_width(&style_spinbox_focus, 1);
+    lv_style_set_border_color(&style_spinbox_focus, lv_color_black());
+
+    lv_style_init(&style_spinbox_edited);
+    lv_style_set_outline_width(&style_spinbox_edited, 0);
+
+    lv_style_init(&style_spinbox_cursor);
+    lv_style_set_bg_color(&style_spinbox_cursor, lv_color_white());
+    lv_style_set_text_color(&style_spinbox_cursor, lv_color_black());
+
+    lv_style_init(&style_spinbox_cursor_edited);
+    lv_style_set_bg_color(&style_spinbox_cursor_edited, lv_color_black());
+    lv_style_set_text_color(&style_spinbox_cursor_edited, lv_color_white());
+    lv_style_set_y(&style_spinbox_cursor_edited, 12);
+
+    inited = true;
+}
+
+static void apply_spinbox_style(lv_obj_t *spinbox)
+{
+    lv_obj_add_style(spinbox, &style_spinbox_main, 0);
+    lv_obj_add_style(spinbox, &style_spinbox_focus, LV_STATE_FOCUS_KEY);
+    lv_obj_add_style(spinbox, &style_spinbox_edited, LV_STATE_EDITED);
+    lv_obj_add_style(spinbox, &style_spinbox_cursor, LV_PART_CURSOR);
+    lv_obj_add_style(spinbox, &style_spinbox_cursor_edited, LV_PART_CURSOR | LV_STATE_EDITED);
+}
 extern void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree);
 
 static void lvgl_event_cb(lv_event_t *evt)
@@ -275,29 +322,17 @@ static void home_page_init(void)
 
         //电流调整框
         current_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(current_spinbox, -80, 80);
+        lv_spinbox_set_range(current_spinbox, 0, 310);
         lv_spinbox_set_digit_format(current_spinbox, 3, 1);
         lv_spinbox_set_step(current_spinbox, 1);
         lv_spinbox_set_value(current_spinbox, 20);
 
         lv_obj_set_content_height(current_spinbox, 12);
+        lv_obj_set_size(current_spinbox, 32, 12);
 
-        lv_obj_set_style_pad_all(current_spinbox, -1, 0);
-        lv_obj_set_style_border_width(current_spinbox, 0, 0);
+        apply_spinbox_style(current_spinbox);
 
-        lv_obj_set_size(current_spinbox, 26, 10);
-
-        lv_obj_set_style_outline_opa(current_spinbox, 0, LV_STATE_FOCUS_KEY);
-        lv_obj_set_style_outline_opa(current_spinbox, 0, LV_STATE_EDITED);
-
-        lv_obj_set_style_bg_color(current_spinbox, lv_color_black(), LV_PART_CURSOR | LV_STATE_EDITED);
-        lv_obj_set_style_text_color(current_spinbox, lv_color_white(), LV_PART_CURSOR | LV_STATE_EDITED);
-        lv_obj_set_style_bg_color(current_spinbox, lv_color_white(), LV_PART_CURSOR);
-        lv_obj_set_style_text_color(current_spinbox, lv_color_black(), LV_PART_CURSOR);
-
-        lv_obj_set_style_text_align(current_spinbox, LV_TEXT_ALIGN_CENTER, 0);
-
-        lv_obj_align(current_spinbox, LV_ALIGN_TOP_RIGHT, -9, 18);
+        lv_obj_align(current_spinbox, LV_ALIGN_TOP_LEFT, 72, 113);
         lv_group_add_obj(group, current_spinbox);
         lv_obj_add_event_cb(current_spinbox, lvgl_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
