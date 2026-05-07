@@ -79,27 +79,6 @@ void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree)
     // LOGI("HRTIM", "Freq: %lu Hz, Phase: %hd deg", freq, phase_shift_degree);
 }
 
-static float AC_data_process(uint32_t *buf_ptr, uint32_t data_len, uint8_t data_offset, float COEF)
-{
-    uint32_t sum = 0;
-    uint64_t square_sum = 0;
-
-    for(uint32_t i = 0; i < data_len; i++)
-    {
-        uint32_t raw = (buf_ptr[i] >> (data_offset * 16)) & 0x0FFF;
-        sum += raw;
-        square_sum += raw * raw;
-    }
-
-    float f_len = (float)data_len;
-
-    float var = ((float)square_sum - ((float)sum * sum) / f_len) / f_len;
-    if(var < 0.0f)
-        var = 0.0f;
-
-    return sqrtf(var) * COEF;
-}
-
 static uint32_t DC_data_process(uint32_t *buf_ptr, uint32_t data_len, uint8_t data_offset, float COEF)
 {
     uint32_t sum = 0;
