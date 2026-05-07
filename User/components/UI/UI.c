@@ -37,22 +37,22 @@ static void lvgl_event_cb(lv_event_t *evt)
     static int16_t phase = 0;
     int32_t value = lv_spinbox_get_value(lv_event_get_current_target(evt));
     // // ESP_LOGI(TAG, "Value changed: %ld", value);
-    if(lv_event_get_current_target(evt) == voltage_spinbox)
-    {
-        freq = value * 1000;
-
-        // pid_set_voltage(value * 10);
-        // snprintf(value_buf[0], 32, "%ld", value);
-        // lv_obj_invalidate(voltage_label);
-    }
-    else if(lv_event_get_current_target(evt) == current_spinbox)
-    {
-        phase = value;
-        // set_current(value * 10);
-        // snprintf(value_buf[1], 32, "%ld", value);
-        // lv_obj_invalidate(current_label);
-    }
-    set_hrtim_prop(freq, phase);
+    // if(lv_event_get_current_target(evt) == voltage_spinbox)
+    // {
+    //     freq = value * 1000;
+    //
+    //     // pid_set_voltage(value * 10);
+    //     // snprintf(value_buf[0], 32, "%ld", value);
+    //     // lv_obj_invalidate(voltage_label);
+    // }
+    // else if(lv_event_get_current_target(evt) == current_spinbox)
+    // {
+    //     phase = value;
+    //     // set_current(value * 10);
+    //     // snprintf(value_buf[1], 32, "%ld", value);
+    //     // lv_obj_invalidate(current_label);
+    // }
+    // set_hrtim_prop(freq, phase);
 }
 
 static void value_update_task(void *arg)
@@ -60,19 +60,19 @@ static void value_update_task(void *arg)
     while(1)
     {
         vTaskDelay(100);
-        float voltage = get_voltage_value(0) / 1000.0f;
-        float current = get_voltage_value(1);
-        snprintf(value_buf[0], 6, "%5.2f", voltage);
-        snprintf(value_buf[1], 5, "%4.2f", current);
-        snprintf(value_buf[2], 8, "%6.2fW", voltage * current);
-
-        if(lvgl_port_lock(portMAX_DELAY))
-        {
-            lv_label_set_text_static(voltage_label, value_buf[0]);
-            lv_label_set_text_static(current_label, value_buf[1]);
-            lv_label_set_text_static(power_value_label, value_buf[2]);
-            lvgl_port_unlock();
-        }
+        // float voltage = get_voltage_value(0) / 1000.0f;
+        // float current = get_voltage_value(1);
+        // snprintf(value_buf[0][0], 6, "%5.2f", voltage);
+        // snprintf(value_buf[0][1], 5, "%4.2f", current);
+        // snprintf(value_buf[0][2], 6, "%5.2f", voltage * current);
+        //
+        // if(lvgl_port_lock(portMAX_DELAY))
+        // {
+        //     lv_label_set_text_static(voltage_label1, value_buf[0][0]);
+        //     lv_label_set_text_static(current_label1, value_buf[0][1]);
+        //     lv_label_set_text_static(power_value_label1, value_buf[0][2]);
+        //     lvgl_port_unlock();
+        // }
     }
 }
 
