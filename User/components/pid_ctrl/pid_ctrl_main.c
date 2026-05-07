@@ -11,16 +11,17 @@ extern QueueHandle_t adc_queue;
 
 static pid_ctrl_block_handle_t pid_handle = NULL;
 QueueHandle_t pid_ctrl_queue_mA = NULL; //单位为mV
-static float now_current_A = 0.0f, now_voltage_mV = 0.0f;
+static float now_high_current_A = 0.0f, now_high_voltage_mV = 0.0f;
+static float now_low_current_A = 0.0f, now_low_voltage_mV = 0.0f;
 
 static float fai_A = 0.0f, fai_B = 0.0f, fai_C = 0.0f;
 
 float get_voltage_value(uint8_t index)
 {
     if(index == 0)
-        return now_voltage_mV;
+        return now_high_voltage_mV;
     if(index == 1)
-        return now_current_A;
+        return now_high_current_A;
 
     return 0.0f;
 }
@@ -79,49 +80,55 @@ void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree)
     // LOGI("HRTIM", "Freq: %lu Hz, Phase: %hd deg", freq, phase_shift_degree);
 }
 
-static uint32_t DC_data_process(uint32_t *buf_ptr, uint32_t data_len, uint8_t data_offset, float COEF)
-{
-    uint32_t sum = 0;
-
-    for(uint32_t i = 0; i < data_len; i++)
-    {
-        sum += (buf_ptr[i] >> (data_offset * 16)) & 0x0FFF;
-    }
-
-    return (uint32_t)((float)sum / (float)data_len * COEF);
-}
-
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
 static void adc_data_process(uint32_t *data_buf)
 {
-    static kalman_1d_state_t kf_voltage;
-    static kalman_1d_state_t kf_current;
+    static kalman_1d_state_t kf_high_voltage;
+    static kalman_1d_state_t kf_high_current;
+    static kalman_1d_state_t kf_low_voltage;
+    static kalman_1d_state_t kf_low_current;
     static uint8_t is_kf_initialized = 0;
     uint16_t len = ADC_BUFFER_LENGTH / 2;
 
-    // 常数可以在预编译期计算，避免运行时产生多余除法
-    // V coef = 3000.0f / 4095.0f * 39.25f;
-    // I coef = (3000.0f / 4095.0f) / 100.0f;
-#define V_RMS_COEF (28.5f)
-#define I_RMS_COEF (0.007326007f)
+    uint32_t v_sum[2] = {0}; //0为高侧, 1为低侧
+    uint32_t i_sum[2] = {0};
 
-    // 1. 获取本次测量的原始值
-    float raw_voltage_mV = AC_data_process(data_buf, len, 0, V_RMS_COEF);
-    float raw_current_A = AC_data_process(data_buf, len, 1, I_RMS_COEF);
+    //低16位对应ADC1,差分采样电流, rank1对应高侧
+    for(uint32_t i = 0; i < len; i += 2)
+    {
+        v_sum[0] += data_buf[i] >> 16 & 0x0FFF;
+        i_sum[0] += data_buf[i] & 0x0FFF;
+        v_sum[1] += data_buf[i + 1] >> 16 & 0x0FFF;
+        i_sum[1] += data_buf[i + 1] & 0x0FFF;
+    }
 
-    // 2. 动态初始化卡尔曼滤波器 (仅第1次执行)
+    // 计算平均值 (每个通道采样 len/2 次)
+    float v_avg_high = (float)v_sum[0] / ((float)len / 2.0f);
+    float v_avg_low = (float)v_sum[1] / ((float)len / 2.0f);
+    float i_avg_high = (float)i_sum[0] / ((float)len / 2.0f);
+    float i_avg_low = (float)i_sum[1] / ((float)len / 2.0f);
+
+    float raw_high_voltage_mV = v_avg_high * (3000.0f / 4095.0f);
+    float raw_high_current_A = i_avg_high * (3.0f / 4095.0f);
+    float raw_low_voltage_mV = v_avg_low * (3000.0f / 4095.0f);
+    float raw_low_current_A = i_avg_low * (3.0f / 4095.0f);
+
     // 使用第一次测量值作为初始状态可以加快滤波器的收敛速度
     if(!is_kf_initialized)
     {
         // Q越大，跟踪越快，滤波效果越弱；Q越小，系统越稳定，但存在滞后
         // R越大，滤波效果越强，认为传感器噪声大；R越小，越相信传感器测量值
-        kalman_1d_init(&kf_voltage, raw_voltage_mV, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
-        kalman_1d_init(&kf_current, raw_current_A, 1.0f, 0.01f, 1.0f); // 电流Q=0.01, R=1.0
+        kalman_1d_init(&kf_high_voltage, raw_high_voltage_mV, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
+        kalman_1d_init(&kf_high_current, raw_high_current_A, 1.0f, 0.01f, 1.0f); // 电流Q=0.01, R=1.0
+        kalman_1d_init(&kf_low_voltage, raw_low_voltage_mV, 10.0f, 0.5f, 50.0f); // 电压Q=0.5, R=50
+        kalman_1d_init(&kf_low_current, raw_low_current_A, 1.0f, 0.01f, 1.0f); // 电流Q=0.01, R=1.0
         is_kf_initialized = 1;
     }
 
-    now_voltage_mV = kalman_1d_update(&kf_voltage, raw_voltage_mV);
-    now_current_A = kalman_1d_update(&kf_current, raw_current_A);
+    now_high_voltage_mV = kalman_1d_update(&kf_high_voltage, raw_high_voltage_mV);
+    now_high_current_A = kalman_1d_update(&kf_high_current, raw_high_current_A);
+    now_low_voltage_mV = kalman_1d_update(&kf_low_voltage, raw_low_voltage_mV);
+    now_low_current_A = kalman_1d_update(&kf_low_current, raw_low_current_A);
 }
 
 
@@ -152,7 +159,7 @@ static void PID_ctrl_routine(void *pvParameters)
             adc_data_process(buf_ptr);
 
             //4. 进行pid计算
-            float error_mV = (float)target_voltage_mV - now_voltage_mV;
+            float error_mV = (float)target_voltage_mV - now_high_voltage_mV;
 
             pid_compute(pid_handle, error_mV, &output);
             if(output < 0.01f)
