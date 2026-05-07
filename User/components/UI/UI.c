@@ -27,7 +27,12 @@ static lv_obj_t *power_value_label = NULL;
 lv_obj_t *voltage_spinbox = NULL;
 lv_obj_t *current_spinbox = NULL;
 
-static char value_buf[3][32] = {"0.00", "0.00", "00.00W"};
+static lv_style_t style_spinbox_main;
+static lv_style_t style_spinbox_focus;
+static lv_style_t style_spinbox_edited;
+static lv_style_t style_spinbox_cursor;
+static lv_style_t style_spinbox_cursor_edited;
+
 static char value_buf[2][3][32] = {{"10.00", "1.00", "10.00"}, {"15.00", "2.00", "30.00"}};
 static const char *mode_text[] = {"-", "→", "←", "↔", NULL};
 static char status_buf[16] = "预充电";
@@ -76,6 +81,7 @@ static void apply_spinbox_style(lv_obj_t *spinbox)
     lv_obj_add_style(spinbox, &style_spinbox_cursor, LV_PART_CURSOR);
     lv_obj_add_style(spinbox, &style_spinbox_cursor_edited, LV_PART_CURSOR | LV_STATE_EDITED);
 }
+
 extern void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree);
 
 static void lvgl_event_cb(lv_event_t *evt)
@@ -176,6 +182,8 @@ static void home_page_init(void)
 {
     if(lvgl_port_lock(portMAX_DELAY))
     {
+        init_spinbox_style();
+
         lv_obj_t *label1 = lv_label_create(lv_screen_active());
         lv_label_set_text(label1, "端口1   端口2");
         lv_obj_set_width(label1, 78);
