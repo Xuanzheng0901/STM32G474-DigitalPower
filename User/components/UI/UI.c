@@ -109,57 +109,91 @@ static void home_page_init(void)
     if(lvgl_port_lock(portMAX_DELAY))
     {
         lv_obj_t *label1 = lv_label_create(lv_screen_active());
-        lv_label_set_text(label1, "电压(V)  电流(A)");
-        lv_obj_set_width(label1, 128);
+        lv_label_set_text(label1, "端口1   端口2");
+        lv_obj_set_width(label1, 78);
         lv_obj_set_style_text_align(label1, LV_TEXT_ALIGN_RIGHT, 0);
-        lv_obj_align(label1, LV_ALIGN_TOP_LEFT, 0, 0);
+        lv_obj_align(label1, LV_ALIGN_TOP_LEFT, 48, 0);
 
         lv_obj_t *label2 = lv_label_create(lv_screen_active());
-        lv_label_set_text(label2, "设定");
-        lv_obj_set_width(label2, 24);
+        lv_label_set_text(label2, "电压/V");
+        lv_obj_set_width(label2, 36);
         lv_obj_set_style_text_align(label2, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(label2, LV_ALIGN_TOP_LEFT, 0, 16);
 
         lv_obj_t *label3 = lv_label_create(lv_screen_active());
-        lv_label_set_text(label3, "实际");
-        lv_obj_set_width(label3, 24);
+        lv_label_set_text(label3, "电流/A");
+        lv_obj_set_width(label3, 36);
         lv_obj_set_style_text_align(label3, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(label3, LV_ALIGN_TOP_LEFT, 0, 32);
 
+        lv_obj_t *label4 = lv_label_create(lv_screen_active());
+        lv_label_set_text(label4, "功率/W");
+        lv_obj_set_width(label4, 36);
+        lv_obj_set_style_text_align(label4, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_align(label4, LV_ALIGN_TOP_LEFT, 0, 48);
+
+        lv_obj_t *label5 = lv_label_create(lv_screen_active());
+        lv_label_set_text(label5, "模式");
+        lv_obj_set_width(label5, 24);
+        lv_obj_set_style_text_align(label5, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_align(label5, LV_ALIGN_TOP_LEFT, 0, 80);
+
+        lv_obj_t *label6 = lv_label_create(lv_screen_active());
+        lv_label_set_text(label6, "状态");
+        lv_obj_set_width(label6, 24);
+        lv_obj_set_style_text_align(label6, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_align(label6, LV_ALIGN_TOP_LEFT, 0, 96);
+
+        lv_obj_t *label7 = lv_label_create(lv_screen_active());
+        lv_label_set_text(label7, "设定电流/A");
+        lv_obj_set_width(label7, 60);
+        lv_obj_set_style_text_align(label7, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_align(label7, LV_ALIGN_TOP_LEFT, 0, 112);
+
         // 电压数值
-        voltage_label = lv_label_create(lv_screen_active());
-        lv_label_set_text_static(voltage_label, value_buf[0]);
-        lv_obj_set_width(voltage_label, 30);
-        lv_obj_set_style_text_align(voltage_label, LV_TEXT_ALIGN_RIGHT, 0);
-        lv_obj_align(voltage_label, LV_ALIGN_TOP_LEFT, 37, 32);
+        voltage_label1 = lv_label_create(lv_screen_active());
+        lv_label_set_text_static(voltage_label1, value_buf[0][0]);
+        lv_obj_set_width(voltage_label1, 30);
+        lv_obj_set_style_text_align(voltage_label1, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(voltage_label1, LV_ALIGN_TOP_LEFT, 48, 16);
+
+        voltage_label2 = lv_label_create(lv_screen_active());
+        lv_label_set_text_static(voltage_label2, value_buf[1][0]);
+        lv_obj_set_width(voltage_label2, 30);
+        lv_obj_set_style_text_align(voltage_label2, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(voltage_label2, LV_ALIGN_TOP_LEFT, 96, 16);
 
         //电流数值
-        current_label = lv_label_create(lv_screen_active());
-        lv_label_set_text_static(current_label, value_buf[1]);
-        lv_obj_set_width(current_label, 24);
-        lv_obj_set_style_text_align(current_label, LV_TEXT_ALIGN_LEFT, 0);
-        lv_obj_align(current_label, LV_ALIGN_TOP_LEFT, 94, 32);
+        current_label1 = lv_label_create(lv_screen_active());
+        lv_label_set_text_static(current_label1, value_buf[0][1]);
+        lv_obj_set_width(current_label1, 30);
+        lv_obj_set_style_text_align(current_label1, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(current_label1, LV_ALIGN_TOP_LEFT, 48, 32);
 
-        lv_obj_t *power_label = lv_label_create(lv_screen_active());
-        lv_label_set_text(power_label, "功率");
-        lv_obj_set_width(power_label, 42);
-        lv_obj_set_style_text_align(power_label, LV_TEXT_ALIGN_LEFT, 0);
-        lv_obj_align(power_label, LV_ALIGN_TOP_LEFT, 0, 48);
+        current_label2 = lv_label_create(lv_screen_active());
+        lv_label_set_text_static(current_label2, value_buf[1][1]);
+        lv_obj_set_width(current_label2, 30);
+        lv_obj_set_style_text_align(current_label2, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(current_label2, LV_ALIGN_TOP_LEFT, 96, 32);
 
         //功率数值
-        power_value_label = lv_label_create(lv_screen_active());
-        lv_label_set_text(power_value_label, value_buf[2]);
-        lv_obj_set_width(power_value_label, 42);
-        lv_obj_set_style_text_align(power_value_label, LV_TEXT_ALIGN_LEFT, 0);
-        lv_obj_align(power_value_label, LV_ALIGN_TOP_LEFT, 31, 48);
+        power_value_label1 = lv_label_create(lv_screen_active());
+        lv_label_set_text(power_value_label1, value_buf[0][2]);
+        lv_obj_set_width(power_value_label1, 30);
+        lv_obj_set_style_text_align(power_value_label1, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(power_value_label1, LV_ALIGN_TOP_LEFT, 48, 48);
 
+        power_value_label2 = lv_label_create(lv_screen_active());
+        lv_label_set_text(power_value_label2, value_buf[1][2]);
+        lv_obj_set_width(power_value_label2, 30);
+        lv_obj_set_style_text_align(power_value_label2, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(power_value_label2, LV_ALIGN_TOP_LEFT, 96, 48);
 
-        //电压调整框
-        voltage_spinbox = lv_spinbox_create(lv_screen_active());
-        lv_spinbox_set_range(voltage_spinbox, 20, 600);
-        lv_spinbox_set_digit_format(voltage_spinbox, 4, 2);
-        lv_spinbox_set_step(voltage_spinbox, 1);
-        lv_spinbox_set_value(voltage_spinbox, 100);
+        status_label = lv_label_create(lv_screen_active());
+        lv_label_set_text_static(status_label, status_buf);
+        lv_obj_set_width(status_label, 48);
+        lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(status_label, LV_ALIGN_TOP_LEFT, 64, 96);
 
         lv_obj_set_content_height(voltage_spinbox, 12);
 
