@@ -8,7 +8,12 @@
 #include "PID.h"
 #include "hrtim.h"
 
-LV_FONT_DECLARE(chillbit);
+typedef enum {
+    MODE_SLEEP = 0,
+    MODE_1TO2,
+    MODE_2TO1,
+    MODE_AUTO
+} mode_t;
 
 extern lv_obj_t *highlight_frame;
 extern lv_anim_t focus_anim;
@@ -21,9 +26,15 @@ extern void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree);
 static lv_indev_t *indev = NULL;
 lv_group_t *group = NULL;
 
-static lv_obj_t *voltage_label = NULL;
-static lv_obj_t *current_label = NULL;
-static lv_obj_t *power_value_label = NULL;
+static lv_obj_t *voltage_label1 = NULL;
+static lv_obj_t *current_label1 = NULL;
+static lv_obj_t *power_value_label1 = NULL;
+static lv_obj_t *voltage_label2 = NULL;
+static lv_obj_t *current_label2 = NULL;
+static lv_obj_t *power_value_label2 = NULL;
+static lv_obj_t *status_label = NULL;
+
+static lv_obj_t *mode_btns[4];
 lv_obj_t *voltage_spinbox = NULL;
 lv_obj_t *current_spinbox = NULL;
 
