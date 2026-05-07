@@ -15,6 +15,8 @@ extern lv_anim_t focus_anim;
 
 extern void focus_event_cb(lv_event_t *e);
 
+extern void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree);
+
 // static lv_display_t *disp = NULL;
 static lv_indev_t *indev = NULL;
 lv_group_t *group = NULL;
