@@ -76,6 +76,27 @@ static void value_update_task(void *arg)
     }
 }
 
+static void mode_btn_event_cb(lv_event_t *e)
+{
+    lv_obj_t *obj = lv_event_get_current_target(e);
+    int32_t id = -1;
+    for(int i = 0; i < 4; i++)
+    {
+        if(mode_btns[i] == obj)
+        {
+            lv_obj_add_state(mode_btns[i], LV_STATE_CHECKED);
+            id = i;
+        }
+        else
+        {
+            lv_obj_remove_state(mode_btns[i], LV_STATE_CHECKED);
+        }
+    }
+    if(id >= 0)
+    {
+        LOGI("BTN", "%ld", id);
+    }
+}
 
 static void indev_init(void)
 {
@@ -195,29 +216,62 @@ static void home_page_init(void)
         lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(status_label, LV_ALIGN_TOP_LEFT, 64, 96);
 
-        lv_obj_set_content_height(voltage_spinbox, 12);
+        // --------- 四个独立模式按钮 ---------
+        for(int i = 0; i < 4; i++)
+        {
+            mode_btns[i] = lv_button_create(lv_screen_active());
+            lv_obj_set_size(mode_btns[i], 12, 12); // 独立按钮尺寸
+            lv_obj_align(mode_btns[i], LV_ALIGN_TOP_LEFT, 48 + i * 18, 80);
 
-        lv_obj_set_style_pad_all(voltage_spinbox, -1, 0);
-        lv_obj_set_style_border_width(voltage_spinbox, 0, 0);
+            // 去除按钮的默认背景、轮廓和投影
+            lv_obj_set_style_bg_opa(mode_btns[i], LV_OPA_TRANSP, 0);
+            lv_obj_set_style_bg_opa(mode_btns[i], LV_OPA_TRANSP, LV_STATE_CHECKED);
+            lv_obj_set_style_bg_opa(mode_btns[i], LV_OPA_TRANSP, LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_bg_opa(mode_btns[i], LV_OPA_TRANSP, LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
 
-        lv_obj_set_size(voltage_spinbox, 32, 10);
+            lv_obj_set_style_shadow_width(mode_btns[i], 0, 0);
+            lv_obj_set_style_outline_width(mode_btns[i], 0, LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_outline_width(mode_btns[i], 0, LV_STATE_EDITED);
 
-        lv_obj_set_style_outline_opa(voltage_spinbox, 0, LV_STATE_FOCUS_KEY);
-        lv_obj_set_style_outline_opa(voltage_spinbox, 0, LV_STATE_EDITED);
+            // 文本和圆角等
+            lv_obj_set_style_radius(mode_btns[i], 0, 0);
+            lv_obj_set_style_text_color(mode_btns[i], lv_color_black(), 0);
+            lv_obj_set_style_text_color(mode_btns[i], lv_color_black(), LV_STATE_CHECKED);
+            lv_obj_set_style_text_color(mode_btns[i], lv_color_black(), LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_pad_all(mode_btns[i], 0, 0);
+            // lv_obj_set_style_pad_bottom(mode_btns[i], 1, 0);
 
-        lv_obj_set_style_bg_color(voltage_spinbox, lv_color_black(), LV_PART_CURSOR | LV_STATE_EDITED);
-        lv_obj_set_style_text_color(voltage_spinbox, lv_color_white(), LV_PART_CURSOR | LV_STATE_EDITED);
-        lv_obj_set_style_bg_color(voltage_spinbox, lv_color_white(), LV_PART_CURSOR);
-        lv_obj_set_style_text_color(voltage_spinbox, lv_color_black(), LV_PART_CURSOR);
+            // 默认透明边框占位 (防下划线出现/消失时抖动)
+            lv_obj_set_style_border_width(mode_btns[i], 1, 0);
+            lv_obj_set_style_border_side(mode_btns[i], LV_BORDER_SIDE_BOTTOM, 0);
+            lv_obj_set_style_border_opa(mode_btns[i], 0, 0);
 
-        lv_obj_set_style_y(voltage_spinbox, 12, LV_PART_CURSOR | LV_STATE_EDITED);
+            // 聚焦时(指针指向): 下划线
+            lv_obj_set_style_border_opa(mode_btns[i], LV_OPA_COVER, LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_border_width(mode_btns[i], 1, LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_border_color(mode_btns[i], lv_color_black(),
+                                          LV_STATE_FOCUS_KEY);
 
-        lv_obj_set_style_text_align(voltage_spinbox, LV_TEXT_ALIGN_CENTER, 0);
+            // 选中时(选中): 下划线
+            lv_obj_set_style_border_opa(mode_btns[i], LV_OPA_COVER, LV_STATE_CHECKED);
+            lv_obj_set_style_border_width(mode_btns[i], 2, LV_STATE_CHECKED);
+            lv_obj_set_style_border_color(mode_btns[i], lv_color_black(), LV_STATE_CHECKED);
+            //
+            // 同时聚焦和选中时，使用更粗的下划线代替反色，防止白色下划线在透明背景下看不清
+            lv_obj_set_style_border_opa(mode_btns[i], LV_OPA_COVER, LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_border_width(mode_btns[i], 3, LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_border_color(mode_btns[i], lv_color_black(), LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
 
-        lv_obj_align(voltage_spinbox, LV_ALIGN_TOP_LEFT, 36, 18);
-        lv_group_add_obj(group, voltage_spinbox);
-        lv_obj_add_event_cb(voltage_spinbox, lvgl_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+            lv_obj_t *lbl = lv_label_create(mode_btns[i]);
+            lv_label_set_text(lbl, mode_text[i]);
+            lv_obj_center(lbl);
 
+            lv_obj_add_flag(mode_btns[i], LV_OBJ_FLAG_CHECKABLE);
+            lv_group_add_obj(group, mode_btns[i]);
+            lv_obj_add_event_cb(mode_btns[i], mode_btn_event_cb, LV_EVENT_CLICKED, NULL);
+        }
+        // 默认选中第一个
+        lv_obj_add_state(mode_btns[0], LV_STATE_CHECKED);
 
         //电流调整框
         current_spinbox = lv_spinbox_create(lv_screen_active());
