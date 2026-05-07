@@ -15,9 +15,6 @@ typedef enum {
     MODE_AUTO
 } mode_t;
 
-extern lv_obj_t *highlight_frame;
-extern lv_anim_t focus_anim;
-
 extern void focus_event_cb(lv_event_t *e);
 
 extern void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree);
