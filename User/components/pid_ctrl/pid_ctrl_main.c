@@ -11,17 +11,22 @@ extern QueueHandle_t adc_queue;
 
 static pid_ctrl_block_handle_t pid_handle = NULL;
 QueueHandle_t pid_ctrl_queue_mA = NULL; //单位为mV
-static float now_high_current_A = 0.0f, now_high_voltage_mV = 0.0f;
-static float now_low_current_A = 0.0f, now_low_voltage_mV = 0.0f;
+static float now_high_current_mA = 0.0f, now_high_voltage_mV = 0.0f;
+static float now_low_current_mA = 0.0f, now_low_voltage_mV = 0.0f;
+static uint16_t mode = MODE_SLEEP;
 
 static float fai_A = 0.0f, fai_B = 0.0f, fai_C = 0.0f;
 
-float get_voltage_value(uint8_t index)
+float get_pid_value(uint8_t index)
 {
     if(index == 0)
         return now_high_voltage_mV;
     if(index == 1)
-        return now_high_current_A;
+        return now_high_current_mA;
+    if(index == 2)
+        return now_low_voltage_mV;
+    if(index == 3)
+        return now_low_current_mA;
 
     return 0.0f;
 }
@@ -109,9 +114,9 @@ static void adc_data_process(uint32_t *data_buf)
     float i_avg_low = (float)i_sum[1] / ((float)len / 2.0f);
 
     float raw_high_voltage_mV = v_avg_high * (3000.0f / 4095.0f);
-    float raw_high_current_A = i_avg_high * (3.0f / 4095.0f);
+    float raw_high_current_A = i_avg_high * (3000.0f / 4095.0f);
     float raw_low_voltage_mV = v_avg_low * (3000.0f / 4095.0f);
-    float raw_low_current_A = i_avg_low * (3.0f / 4095.0f);
+    float raw_low_current_A = i_avg_low * (3000.0f / 4095.0f);
 
     // 使用第一次测量值作为初始状态可以加快滤波器的收敛速度
     if(!is_kf_initialized)
@@ -126,9 +131,9 @@ static void adc_data_process(uint32_t *data_buf)
     }
 
     now_high_voltage_mV = kalman_1d_update(&kf_high_voltage, raw_high_voltage_mV);
-    now_high_current_A = kalman_1d_update(&kf_high_current, raw_high_current_A);
+    now_high_current_mA = kalman_1d_update(&kf_high_current, raw_high_current_A);
     now_low_voltage_mV = kalman_1d_update(&kf_low_voltage, raw_low_voltage_mV);
-    now_low_current_A = kalman_1d_update(&kf_low_current, raw_low_current_A);
+    now_low_current_mA = kalman_1d_update(&kf_low_current, raw_low_current_A);
 }
 
 
