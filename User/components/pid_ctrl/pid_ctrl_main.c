@@ -6,6 +6,7 @@
 #include "task.h"
 #include "queue.h"
 #include "kalman.h"
+#include "PID.h"
 
 extern QueueHandle_t adc_queue;
 
@@ -139,9 +140,12 @@ static void adc_data_process(uint32_t *data_buf)
 
 static void PID_ctrl_routine(void *pvParameters)
 {
-    static uint32_t target_voltage_mV = 0;
-    static uint32_t target_voltage_buffer_mV = 0;
+    static uint16_t mode_buffer = MODE_SLEEP;
+    static uint16_t target_current_mA = 0;
+    static uint16_t target_current_mA_buffer = 0;
+    static uint32_t queue_recv_buffer = 0;
 
+    static uint8_t initial_count = 0;
     static float output = 0.0f;
 
     static uint32_t *buf_ptr;
@@ -153,20 +157,67 @@ static void PID_ctrl_routine(void *pvParameters)
         {
             HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
             //2. 查询target是否改变
-            if(pdPASS == xQueueReceive(pid_ctrl_queue_mA, &target_voltage_buffer_mV, 0))
+            if(pdPASS == xQueueReceive(pid_ctrl_queue_mA, &queue_recv_buffer, 0))
             {
-                if(target_voltage_mV != target_voltage_buffer_mV)
+                mode_buffer = queue_recv_buffer >> 16;
+                target_current_mA_buffer = queue_recv_buffer & 0xFFFF;
+                if(mode != mode_buffer)
                 {
-                    target_voltage_mV = target_voltage_buffer_mV;
-                    // pid_reset_ctrl_block(pid_handle); //使用增量式pid更改target后不能重置
+                    mode = mode_buffer;
+                    initial_count = 0;
+                    pid_reset_ctrl_block(pid_handle);
+                }
+                if(target_current_mA != target_current_mA_buffer)
+                {
+                    target_current_mA = target_current_mA_buffer;
                 }
             }
             adc_data_process(buf_ptr);
 
-            //4. 进行pid计算
-            float error_mV = (float)target_voltage_mV - now_high_voltage_mV;
+            switch(mode)
+            {
+                case MODE_SLEEP:
+                    if(initial_count++ == 0)
+                    {
+                        HAL_HRTIM_WaveformCountStop(
+                            &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
+                        continue;
+                    }
 
-            pid_compute(pid_handle, error_mV, &output);
+                    continue;
+                case MODE_1TO2:
+                    if(initial_count++ == 0)
+                    {
+                        HAL_HRTIM_WaveformCountStart(
+                            &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
+                        continue;
+                        //计算faiA和faiC
+                    }
+                    if(now_low_voltage_mV <= 3000)
+                    {
+                        submode = 1;
+                        target_current_mA = 500;
+                    }
+                    else
+                    {
+                        submode = 2;
+                        target_current_mA = target_current_mA_buffer;
+                    }
+                    float error_mA = (float)target_current_mA - now_low_current_mA;
+                    pid_compute(pid_handle, error_mA, &output);
+                    if(output < 0.01f)
+                        output = 0.0f;
+
+                //转换成移相角/频率
+                case MODE_2TO1:
+                case MODE_AUTO:
+                default:
+                    break;
+            }
+            //4. 进行pid计算
+            float error_mA = (float)target_current_mA - now_high_current_mA;
+
+            pid_compute(pid_handle, error_mA, &output);
             if(output < 0.01f)
                 output = 0.0f;
             // set_mod_ratio_by_factor(output);
@@ -176,13 +227,10 @@ static void PID_ctrl_routine(void *pvParameters)
     }
 }
 
-void pid_set_voltage(uint32_t mA)
+void pid_set_current(uint32_t mA)
 {
-    static uint32_t mA_buf;
     if(NULL == pid_ctrl_queue_mA)
-        return;
-    mA_buf = mA;
-    xQueueSend(pid_ctrl_queue_mA, &mA_buf, portMAX_DELAY);
+        xQueueSend(pid_ctrl_queue_mA, &mA, portMAX_DELAY);
 }
 
 void pid_ctrl_init(void)
@@ -199,8 +247,8 @@ void pid_ctrl_init(void)
             .cal_type     = PID_CAL_TYPE_INCREMENTAL,
         }
     };
-    // pid_new_control_block(&pid_cfg, &pid_handle);
-    // pid_ctrl_queue_mV = xQueueCreate(6, sizeof(uint32_t));
-    // xTaskCreate(PID_ctrl_routine, "PID", 2048, NULL, 15, NULL);
-    // pid_set_voltage(0);
+    pid_new_control_block(&pid_cfg, &pid_handle);
+    pid_ctrl_queue_mA = xQueueCreate(6, sizeof(uint32_t));
+    xTaskCreate(PID_ctrl_routine, "PID", 2048, NULL, 15, NULL);
+    pid_set_current(0);
 }
