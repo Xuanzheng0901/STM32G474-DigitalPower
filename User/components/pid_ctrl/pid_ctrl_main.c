@@ -8,14 +8,14 @@
 #include "kalman.h"
 #include "PID.h"
 
-#define MODE_CHANGE_BUFFER_TIME_MS 100
-#define MODE_CHANGE_BUFFER_COUNT   (MODE_CHANGE_BUFFER_TIME_MS / 10)
+#ifndef SWITCH_DELAY_CYCLES
+#define SWITCH_DELAY_CYCLES 500
+#endif
 
-#define TRANS_IDLE           0
-#define TRANS_RAMP_DOWN      1
-#define TRANS_WAIT_SLEEP     2
-#define TRANS_RAMP_CYCLES    30
-#define TRANS_SLEEP_CYCLES   10
+typedef enum {
+    SWITCH_STATE_IDLE = 0,
+    SWITCH_STATE_SLEEP_TRANSITION
+} mode_switch_state_t;
 
 extern QueueHandle_t adc_queue;
 
@@ -23,9 +23,8 @@ static pid_ctrl_block_handle_t pid_handle = NULL;
 QueueHandle_t pid_ctrl_queue_mA = NULL; //单位为mV
 static float now_high_current_mA = 0.0f, now_high_voltage_mV = 0.0f;
 static float now_low_current_mA = 0.0f, now_low_voltage_mV = 0.0f;
-uint16_t mode = MODE_SLEEP;
+static uint16_t mode = MODE_SLEEP;
 uint8_t submode = 0;
-static uint16_t pending_new_mode = MODE_SLEEP;
 
 static float fai_A = 0.0f, fai_B = 0.0f, fai_C = 0.0f;
 
@@ -151,291 +150,117 @@ static void adc_data_process(uint32_t *data_buf)
 
 static void PID_ctrl_routine(void *pvParameters)
 {
-    static uint16_t mode_buffer = MODE_SLEEP;
     static uint16_t target_current_mA = 0;
     static uint16_t target_current_mA_buffer = 0;
     static uint32_t queue_recv_buffer = 0;
 
-    static uint8_t initial_count = 0;
+    static uint32_t mode_tick_count = 0;
     static float output = 0.0f;
+    static float error_mA = 0.0f;
 
     static uint32_t *buf_ptr;
 
-    static uint8_t trans_state = TRANS_IDLE;
-    static uint8_t trans_counter = 0;
+    // 添加模式安全切换使用的状态变量
+    static mode_switch_state_t switch_state = SWITCH_STATE_IDLE;
+    static uint16_t switch_timer = 0;
+    static uint16_t target_mode_request = MODE_SLEEP;
 
-    uint8_t last_mode = 0;
+    static float M = 0.0f; // 电压增益
+
     while(1)
     {
         //1. 等待ADC数据
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) == pdTRUE)
         {
             HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
-            //2. 查询target与mode是否改变
+
+            //2. 查询target是否改变
             if(pdPASS == xQueueReceive(pid_ctrl_queue_mA, &queue_recv_buffer, 0))
             {
-                mode_buffer = queue_recv_buffer >> 16;
-                target_current_mA_buffer = queue_recv_buffer & 0xFFFF;
-                if(mode != mode_buffer) //如果模式改变
+                uint16_t recv_mode = queue_recv_buffer >> 16;
+                uint16_t recv_target = queue_recv_buffer & 0xFFFF;
+
+                //模式更改
+                if(mode != recv_mode && switch_state == SWITCH_STATE_IDLE) //如果当前不处在切换模式过程中
                 {
-                    last_mode = mode;
-                    if(mode == MODE_SLEEP)
-                    {
-                        mode = mode_buffer;
-                        pid_reset_ctrl_block(pid_handle);
-                        initial_count = 0;
-                        continue;
-                    }
-                    else
-                    {
-                        if(mode_buffer == MODE_SLEEP)
-                        {
-                            mode = mode_buffer;
-                            pid_reset_ctrl_block(pid_handle);
-                            initial_count = 0;
-                            continue;
-                        }
+                    target_mode_request = recv_mode;
+                    target_current_mA_buffer = recv_target;
 
-                        else
-                        {
-                            pending_new_mode = mode_buffer;
-                            trans_state = TRANS_RAMP_DOWN;
-                            trans_counter = 0;
-                        }
-                    }
-
-
-                    // mode = mode_buffer;
-                    // initial_count = 0;
-                    // pid_reset_ctrl_block(pid_handle);
+                    // 直接进入SLEEP中转
+                    mode = MODE_SLEEP;
+                    switch_state = SWITCH_STATE_SLEEP_TRANSITION; // 等待SLEEP后切换目标模式
+                    switch_timer = 0;
+                    mode_tick_count = 0;
+                    pid_reset_ctrl_block(pid_handle);
                 }
-                if(target_current_mA != target_current_mA_buffer)
+                else if(switch_state == SWITCH_STATE_IDLE) //模式没更改, 更新目标电流
                 {
-                    target_current_mA = target_current_mA_buffer;
+                    target_current_mA = recv_target;
                 }
             }
             adc_data_process(buf_ptr);
 
-            if(trans_state == TRANS_RAMP_DOWN)
+            // 3. 状态机处理模式切换
+            if(switch_state == SWITCH_STATE_SLEEP_TRANSITION)
             {
-                trans_counter++;
-                if(trans_counter >= TRANS_RAMP_CYCLES)
+                // 在SLEEP模式关断管子后经过一定周期再切目标模式
+                if(++switch_timer >= SWITCH_DELAY_CYCLES)
                 {
-                    mode = MODE_SLEEP;
-                    initial_count = 0;
-                    pid_reset_ctrl_block(pid_handle);
-                    trans_state = TRANS_WAIT_SLEEP;
-                    trans_counter = 0;
-                }
-            }
-            else if(trans_state == TRANS_WAIT_SLEEP)
-            {
-                trans_counter++;
-                if(trans_counter >= TRANS_SLEEP_CYCLES)
-                {
-                    mode = pending_new_mode;
+                    mode = target_mode_request;
                     target_current_mA = target_current_mA_buffer;
-                    initial_count = 0;
+                    switch_state = SWITCH_STATE_IDLE;
+                    mode_tick_count = 0;
                     pid_reset_ctrl_block(pid_handle);
-                    trans_state = TRANS_IDLE;
-                    trans_counter = 0;
                 }
             }
 
             switch(mode)
             {
                 case MODE_SLEEP:
-                    if(initial_count == 0)
+                    if(mode_tick_count++ == 0)
                     {
                         HAL_HRTIM_WaveformCountStop(
                             &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
-                        initial_count++;
                     }
                     continue;
-
                 case MODE_1TO2:
-                {
-                    if(initial_count++ < MODE_CHANGE_BUFFER_COUNT)
+                    if(mode_tick_count++ == 0)
                     {
                         HAL_HRTIM_WaveformCountStart(
                             &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
-                        set_hrtim_prop(100000, 0);
-                        initial_count++;
                         continue;
                     }
-
-                    if(trans_state == TRANS_RAMP_DOWN)
-                    {
-                        target_current_mA = 0;
-                    }
-                    else if(now_low_voltage_mV <= 3000.0f)
+                    if(now_low_voltage_mV <= 3000)
                     {
                         submode = 1;
                         target_current_mA = 500;
                     }
-                    else if(now_low_voltage_mV >= 4200.0f)
-                    {
-                        submode = 3;
-                        target_current_mA = 0;
-                    }
                     else
                     {
                         submode = 2;
                         target_current_mA = target_current_mA_buffer;
                     }
-
-                    float error_mA = (float)target_current_mA - now_low_current_mA;
+                    error_mA = (float)target_current_mA - now_low_current_mA;
                     pid_compute(pid_handle, error_mA, &output);
                     if(output < 0.01f)
                         output = 0.0f;
-
-                    int16_t phase = (int16_t)(output / 0.96f * 90.0f);
-                    if(phase > 90)
-                        phase = 90;
-                    set_hrtim_prop(100000, phase);
-                }
-                break;
+                    break;
 
                 case MODE_2TO1:
-                {
-                    if(initial_count++ == 0)
-                    {
-                        HAL_HRTIM_WaveformCountStart(
-                            &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
-                        set_hrtim_prop(100000, 0);
-                        continue;
-                    }
-
-                    if(trans_state == TRANS_RAMP_DOWN)
-                    {
-                        target_current_mA = 0;
-                    }
-                    else if(now_high_voltage_mV <= 10000.0f)
-                    {
-                        submode = 1;
-                        target_current_mA = 100;
-                    }
-                    else if(now_high_voltage_mV >= 15000.0f)
-                    {
-                        submode = 3;
-                        target_current_mA = 0;
-                    }
-                    else
-                    {
-                        submode = 2;
-                        target_current_mA = target_current_mA_buffer;
-                    }
-
-                    float error_mA = (float)target_current_mA - now_high_current_mA;
-                    pid_compute(pid_handle, error_mA, &output);
-                    if(output < 0.01f)
-                        output = 0.0f;
-
-                    int16_t phase = -(int16_t)(output / 0.96f * 90.0f);
-                    if(phase < -90)
-                        phase = -90;
-                    set_hrtim_prop(100000, phase);
-                }
-                break;
-
                 case MODE_AUTO:
-                {
-                    static uint8_t auto_direction = 0;
-
-                    if(initial_count++ == 0)
-                    {
-                        HAL_HRTIM_WaveformCountStart(
-                            &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
-                        set_hrtim_prop(100000, 0);
-                        auto_direction = 0;
-                        continue;
-                    }
-
-                    if(now_high_voltage_mV < 11000.0f)
-                    {
-                        if(auto_direction != 2)
-                        {
-                            auto_direction = 2;
-                            pid_reset_ctrl_block(pid_handle);
-                        }
-                        if(trans_state == TRANS_RAMP_DOWN)
-                        {
-                            target_current_mA = 0;
-                        }
-                        else if(now_high_voltage_mV <= 10000.0f)
-                        {
-                            submode = 1;
-                            target_current_mA = 100;
-                        }
-                        else if(now_high_voltage_mV >= 15000.0f)
-                        {
-                            submode = 3;
-                            target_current_mA = 0;
-                        }
-                        else
-                        {
-                            submode = 2;
-                            target_current_mA = target_current_mA_buffer;
-                        }
-
-                        float error_mA = (float)target_current_mA - now_high_current_mA;
-                        pid_compute(pid_handle, error_mA, &output);
-                        if(output < 0.01f)
-                            output = 0.0f;
-
-                        int16_t phase = -(int16_t)(output / 0.96f * 90.0f);
-                        if(phase < -90)
-                            phase = -90;
-                        set_hrtim_prop(100000, phase);
-                    }
-                    else if(now_high_voltage_mV >= 11500.0f)
-                    {
-                        if(auto_direction != 1)
-                        {
-                            auto_direction = 1;
-                            pid_reset_ctrl_block(pid_handle);
-                        }
-                        if(trans_state == TRANS_RAMP_DOWN)
-                        {
-                            target_current_mA = 0;
-                        }
-                        else if(now_low_voltage_mV <= 3000.0f)
-                        {
-                            submode = 1;
-                            target_current_mA = 500;
-                        }
-                        else if(now_low_voltage_mV >= 4200.0f)
-                        {
-                            submode = 3;
-                            target_current_mA = 0;
-                        }
-                        else
-                        {
-                            submode = 2;
-                            target_current_mA = target_current_mA_buffer;
-                        }
-
-                        float error_mA = (float)target_current_mA - now_low_current_mA;
-                        pid_compute(pid_handle, error_mA, &output);
-                        if(output < 0.01f)
-                            output = 0.0f;
-
-                        int16_t phase = (int16_t)(output / 0.96f * 90.0f);
-                        if(phase > 90)
-                            phase = 90;
-                        set_hrtim_prop(100000, phase);
-                    }
-                    else
-                    {
-                        output = 0.0f;
-                        set_hrtim_prop(100000, 0);
-                    }
-                }
-                break;
-
                 default:
                     break;
             }
+
+            //4. 进行pid计算
+            error_mA = (float)target_current_mA - now_high_current_mA;
+
+            pid_compute(pid_handle, error_mA, &output);
+            if(output < 0.01f)
+                output = 0.0f;
+
+            // set_mod_ratio_by_factor(output);
+            // LOGI("PID", "output: %.6f", output);
             HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
         }
     }
