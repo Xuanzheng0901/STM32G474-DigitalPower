@@ -202,7 +202,7 @@ static void PID_ctrl_routine(void *pvParameters)
 
     static uint32_t *buf_ptr;
 
-    // 添加模式安全切换使用的状态变量
+    // 模式安全切换使用的状态变量
     static mode_switch_state_t switch_state = SWITCH_STATE_IDLE;
     static uint16_t switch_timer = 0;
     static uint16_t target_mode_request = MODE_SLEEP;
@@ -228,12 +228,13 @@ static void PID_ctrl_routine(void *pvParameters)
                     target_mode_request = recv_mode;
                     target_current_mA_buffer = recv_target;
 
-                    // 直接进入SLEEP中转
+                    // 切入 SLEEP 模式进行死区时间的缓冲保护
                     mode = MODE_SLEEP;
                     switch_state = SWITCH_STATE_SLEEP_TRANSITION; // 等待SLEEP后切换目标模式
                     switch_timer = 0;
                     mode_tick_count = 0;
                     pid_reset_ctrl_block(pid_handle);
+                    fs_output = FS_MAX; // 切换时频率重置为最安全状态
                 }
                 else if(switch_state == SWITCH_STATE_IDLE) //模式没更改, 更新目标电流
                 {
@@ -267,11 +268,18 @@ static void PID_ctrl_routine(void *pvParameters)
                     continue;
                 case MODE_1TO2:
                     if(mode_tick_count++ == 0)
+                    if(mode_tick_count == 0)
                     {
                         HAL_HRTIM_WaveformCountStart(
                             &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
                         continue;
+                        // 关断所有 8 个管子
+                        HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_ALL_OUTPUTS);
+                        HRTIM_Update_Timing(FS_MAX, 0.0f, 0.0f, 0.0f, DIR_FORWARD); // 待机设为最高频
+                        mode_tick_count++;
                     }
+                    continue; // Sleep 下不进行 PID 计算
+
                     if(now_low_voltage_mV <= 3000)
                     {
                         submode = 1;
@@ -286,9 +294,46 @@ static void PID_ctrl_routine(void *pvParameters)
                     pid_compute(pid_handle, error_mA, &output);
                     if(output < 0.01f)
                         output = 0.0f;
+                    if(mode_tick_count == 0)
+                    {
+                        // 载入频率控制的PID参数 (负极性配置: 误差大 -> 频率降)
+                        pid_ctrl_parameter_t new_param = {
+                            .kp           = -10.0f,     // 响应比例(按需微调)
+                            .ki           = -1.0f,      // 积分(按需微调)
+                            .kd           = 0.0f,
+                            .max_output   = FS_MAX,     // 限制上限
+                            .min_output   = FS_MIN,     // 限制下限
+                            .max_integral = 30000.0f,   // 积分抗饱和上限
+                            .min_integral = -30000.0f,  // 积分抗饱和下限
+                            .cal_type     = PID_CAL_TYPE_POSITIONAL, // 位置式PID
+                        };
+                        pid_update_parameters(pid_handle, &new_param);
+
+                        // 开启所有 8 个管子
+                        HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
+                        mode_tick_count++;
+                    }
                     break;
 
                 case MODE_2TO1:
+                    if(mode_tick_count == 0)
+                    {
+                        // 反向放电：误差符号约定与正向一致，使用相同的负极性PID参数
+                        pid_ctrl_parameter_t new_param = {
+                            .kp           = -10.0f,
+                            .ki           = -1.0f,
+                            .kd           = 0.0f,
+                            .max_output   = FS_MAX,
+                            .min_output   = FS_MIN,
+                            .max_integral = 30000.0f,
+                            .min_integral = -30000.0f,
+                            .cal_type     = PID_CAL_TYPE_POSITIONAL,
+                        };
+                        pid_update_parameters(pid_handle, &new_param);
+
+                        HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
+                        mode_tick_count++;
+                    }
                 case MODE_AUTO:
                 default:
                     break;
