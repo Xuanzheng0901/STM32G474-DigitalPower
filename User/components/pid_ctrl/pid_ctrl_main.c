@@ -300,20 +300,22 @@ static void PID_ctrl_routine(void *pvParameters)
                     }
                     continue; // Sleep 下不进行 PID 计算
 
+                case MODE_1TO2: // 正向充电
                     if(now_low_voltage_mV <= 3000)
                     {
                         submode = 1;
-                        target_current_mA = 500;
+                        target_current_mA = 500; // 电池过放，使用 500mA 预充
                     }
                     else
                     {
                         submode = 2;
                         target_current_mA = target_current_mA_buffer;
                     }
+
+                    // 正向：误差 = 目标电流 - 次级充电电流
                     error_mA = (float)target_current_mA - now_low_current_mA;
-                    pid_compute(pid_handle, error_mA, &output);
-                    if(output < 0.01f)
-                        output = 0.0f;
+                    current_dir = DIR_FORWARD;
+
                     if(mode_tick_count == 0)
                     {
                         // 载入频率控制的PID参数 (负极性配置: 误差大 -> 频率降)
