@@ -4,14 +4,17 @@
 #include "sys/param.h"
 #include "stm32g4xx_hal.h"
 
+//切换状态枚举
 typedef enum {
-    TIMER_A = 0,
-    TIMER_B,
-    TIMER_C,
-    TIMER_D,
-    TIMER_E,
-    TIMER_F,
-} hrtim_timer_t;
+    SWITCH_STATE_IDLE = 0,
+    SWITCH_STATE_SLEEP_TRANSITION
+} mode_switch_state_t;
+
+// 功率传输方向枚举
+typedef enum {
+    DIR_FORWARD = 0, // 正向: 10V~15V -> 3V~4.2V
+    DIR_REVERSE = 1  // 反向: 3V~4.2V -> 10V~15V
+} power_dir_t;
 
 /**
  * @brief PID calculation type

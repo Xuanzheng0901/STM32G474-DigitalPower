@@ -8,15 +8,6 @@
 #include "kalman.h"
 #include "PID.h"
 
-#ifndef SWITCH_DELAY_CYCLES
-#define SWITCH_DELAY_CYCLES 500
-#endif
-
-typedef enum {
-    SWITCH_STATE_IDLE = 0,
-    SWITCH_STATE_SLEEP_TRANSITION
-} mode_switch_state_t;
-
 extern QueueHandle_t adc_queue;
 
 static pid_ctrl_block_handle_t pid_handle = NULL;
@@ -25,8 +16,6 @@ static float now_high_current_mA = 0.0f, now_high_voltage_mV = 0.0f;
 static float now_low_current_mA = 0.0f, now_low_voltage_mV = 0.0f;
 static uint16_t mode = MODE_SLEEP;
 uint8_t submode = 0;
-
-static float fai_A = 0.0f, fai_B = 0.0f, fai_C = 0.0f;
 
 float get_pid_value(uint8_t index)
 {
@@ -40,60 +29,6 @@ float get_pid_value(uint8_t index)
         return now_low_current_mA;
 
     return 0.0f;
-}
-
-void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree)
-{
-    static uint32_t current_prescaler = HRTIM_PRESCALERRATIO_MUL8;
-    const static float factor_tbl[8] = {32.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f};
-
-    uint32_t period = (uint32_t)(170000000.0f * factor_tbl[current_prescaler] / (float)freq);
-    while(period >= 0xFF00)
-    {
-        if(current_prescaler == HRTIM_PRESCALERRATIO_DIV4)
-            break;
-        current_prescaler++;
-
-        period = (uint32_t)(170000000.0f * factor_tbl[current_prescaler] / (float)freq);
-    }
-
-    while(period <= 0x7000)
-    {
-        if(current_prescaler == HRTIM_PRESCALERRATIO_MUL32)
-            break;
-        current_prescaler--;
-
-        period = (uint32_t)(170000000.0f * factor_tbl[current_prescaler] / (float)freq);
-    }
-
-    int32_t offset = (int32_t)((float)phase_shift_degree / 360.0f * (float)period);
-    HAL_HRTIM_WaveformOutputStop(&hhrtim1,HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2 | HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TB2);
-
-    HAL_HRTIM_WaveformCountStop(&hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
-
-    __HAL_HRTIM_SETCLOCKPRESCALER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, current_prescaler);
-    __HAL_HRTIM_SETCLOCKPRESCALER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, current_prescaler);
-    __HAL_HRTIM_SETCLOCKPRESCALER(&hhrtim1, HRTIM_TIMERINDEX_MASTER, current_prescaler);
-
-    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_MASTER, period);
-    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, period);
-    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, period);
-
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, period / 2);
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, period / 2);
-
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_1,
-                           offset >= 0 ? offset : period + offset);
-
-    __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_MASTER, 0);
-    __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, 0);
-    __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, 0);
-
-    // HAL_HRTIM_WaveformCountStart(&hhrtim1,HRTIM_TIMERID_TIMER_A);
-    HAL_HRTIM_WaveformCountStart(&hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
-    HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2 | HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TB2);
-
-    // LOGI("HRTIM", "Freq: %lu Hz, Phase: %hd deg", freq, phase_shift_degree);
 }
 
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
