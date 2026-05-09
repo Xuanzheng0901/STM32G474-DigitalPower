@@ -417,5 +417,4 @@ void pid_ctrl_init(void)
     pid_new_control_block(&pid_cfg, &pid_handle);
     pid_ctrl_queue_mA = xQueueCreate(6, sizeof(uint32_t));
     xTaskCreate(PID_ctrl_routine, "PID", 2048, NULL, 15, NULL);
-    pid_set_current(0);
 }
