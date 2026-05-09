@@ -147,6 +147,111 @@ static void adc_data_process(uint32_t *data_buf)
     now_low_current_mA = kalman_1d_update(&kf_low_current, raw_low_current_A);
 }
 
+// ==========================================================
+// 硬件参数与系统宏定义
+// ==========================================================
+#define HRTIM_CLK_HZ     5.44e9f  // 定时器主时钟: 170M * 32
+#define FS_MAX           135000.0f      // 最高开关频率 (对应极轻载/空载)
+#define FS_MIN           95000.0f       // 最低开关频率 (对应满载)
+#define SWITCH_DELAY_CYCLES 500
+#define TRANSFORMER_N (3.33333f)
+
+#define SWITCH_DELAY_CYCLES 50          // 模式切换时在SLEEP模式停留的周期数
+
+// 宏定义：开启和关闭全部8个桥臂的输出
+#define HRTIM_ALL_OUTPUTS (HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2 | \
+                           HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TB2 | \
+                           HRTIM_OUTPUT_TC1 | HRTIM_OUTPUT_TC2 | \
+                           HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2)
+
+void HRTIM_Update_Timing(float fs_hz, float alpha_p_rad, float alpha_s_rad, float theta_rad, power_dir_t dir)
+{
+    // 1. 频率限幅保护
+    if(fs_hz > FS_MAX)
+        fs_hz = FS_MAX;
+    if(fs_hz < FS_MIN)
+        fs_hz = FS_MIN;
+
+    // 2. 根据新频率计算最新的周期 Ticks
+    uint32_t new_period_ticks = (uint32_t)(HRTIM_CLK_HZ / fs_hz);
+    uint32_t half_period = new_period_ticks / 2;
+
+    // 3. 根据最新的周期，将弧度(rad)转换为 Ticks
+    float rad_to_ticks = (float)new_period_ticks / (2.0f * 3.14159265f);
+
+    uint32_t alpha_p_t = (uint32_t)(alpha_p_rad * rad_to_ticks);
+    uint32_t alpha_s_t = (uint32_t)(alpha_s_rad * rad_to_ticks);
+    uint32_t theta_t = (uint32_t)(theta_rad * rad_to_ticks);
+
+    // 4. 计算 Master Timer 负责同步的四个移相重置点 (CMP)
+    uint32_t cmp2;
+
+    uint32_t cmp1 = 0; // Timer A (初级上桥) 永远为基准0
+
+    // Timer C (初级下桥) 滞后 A 180度 + alpha_p
+    uint32_t cmp3 = (cmp1 + half_period + alpha_p_t) % new_period_ticks;
+
+    // Timer B (次级上桥) 相对于 A 的偏移 theta
+    if(dir == DIR_FORWARD)
+    {
+        cmp2 = (cmp1 + theta_t) % new_period_ticks;
+    }
+    else
+    {
+        // 反向：次级超前初级，相当于滞后 (Period - theta)
+        cmp2 = (cmp1 + new_period_ticks - theta_t) % new_period_ticks;
+    }
+
+    // Timer D (次级下桥) 滞后 B 180度 + alpha_s
+    uint32_t cmp4 = (cmp2 + half_period + alpha_s_t) % new_period_ticks;
+
+    // --------------------------------------------------------
+    // 5. 硬件极值约束保护
+    // --------------------------------------------------------
+    // Master CMP2 和 CMP4 最小不能低于 96 (硬件限制)
+    if(cmp2 < 96)
+        cmp2 = 96;
+    if(cmp4 < 96)
+        cmp4 = 96;
+
+    // CMP 不能大于等于 Period，否则无法触发同步
+    if(cmp2 >= new_period_ticks)
+        cmp2 = new_period_ticks - 1;
+    if(cmp3 >= new_period_ticks)
+        cmp3 = new_period_ticks - 1;
+    if(cmp4 >= new_period_ticks)
+        cmp4 = new_period_ticks - 1;
+
+    // --------------------------------------------------------
+    // 6. 一次性将所有值写入 HRTIM 寄存器
+    // (依赖 HRTIM 的 Preload 影子寄存器机制同步生效)
+    // --------------------------------------------------------
+    // 更新周期
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_MASTER, new_period_ticks);
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, new_period_ticks);
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, new_period_ticks);
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, new_period_ticks);
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, new_period_ticks);
+
+    // 更新 A, B, C, D 的 50% 占空比翻转点
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, half_period);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, half_period);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, HRTIM_COMPAREUNIT_3, half_period);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_3, half_period);
+
+    // 更新 Master 的 4 个移相控制点
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_1, cmp1);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_2, cmp2);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_3, cmp3);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_4, cmp4);
+
+    // opt: 将计数器置0, 但是不置0也不会有什么问题
+    // __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_MASTER, 0);
+    // __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, 0);
+    // __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, 0);
+    // __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, 0);
+    // __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, 0);
+}
 
 static void PID_ctrl_routine(void *pvParameters)
 {
@@ -155,7 +260,9 @@ static void PID_ctrl_routine(void *pvParameters)
     static uint32_t queue_recv_buffer = 0;
 
     static uint32_t mode_tick_count = 0;
-    static float output = 0.0f;
+
+    // PID 相关变量
+    static float fs_output = FS_MAX; // 初始化为最高频率(最小功率输出)
     static float error_mA = 0.0f;
 
     static uint32_t *buf_ptr;
