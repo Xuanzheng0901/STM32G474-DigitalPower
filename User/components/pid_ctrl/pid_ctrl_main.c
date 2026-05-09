@@ -337,7 +337,25 @@ static void PID_ctrl_routine(void *pvParameters)
                     }
                     break;
 
-                case MODE_2TO1:
+                case MODE_2TO1: // 反向放电
+                    // 发挥部分一（1）：a,a'端口电压≤10.0V 时，输出预充电流 0.1A
+                    if(now_high_voltage_mV <= 10000)
+                    {
+                        submode = 1;
+                        target_current_mA = 100;
+                    }
+                    else
+                    {
+                        submode = 2;
+                        target_current_mA = target_current_mA_buffer;
+                    }
+
+                    // 发挥部分一（3）：手动模式放电时，调节 a,a' (高压侧) 充电电流 0.1A~1.0A
+                    error_mA = (float)target_current_mA - fabsf(now_high_current_mA);
+
+
+                    current_dir = DIR_REVERSE;
+
                     if(mode_tick_count == 0)
                     {
                         // 反向放电：误差符号约定与正向一致，使用相同的负极性PID参数
