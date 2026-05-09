@@ -13,6 +13,6 @@ void pid_ctrl_init(void);
 
 float get_pid_value(uint8_t index);
 
-void pid_set_current(uint32_t mv);
+void pid_set_current(uint32_t mA);
 
 #endif //G474_1_PID_H
