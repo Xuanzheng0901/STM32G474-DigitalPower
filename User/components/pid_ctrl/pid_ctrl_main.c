@@ -245,6 +245,8 @@ static void PID_ctrl_routine(void *pvParameters)
                     target_current_mA = recv_target;
                 }
             }
+
+
             adc_data_process(buf_ptr);
 
             // 3. 状态机处理模式切换
