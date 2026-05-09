@@ -206,6 +206,7 @@ static void PID_ctrl_routine(void *pvParameters)
     static mode_switch_state_t switch_state = SWITCH_STATE_IDLE;
     static uint16_t switch_timer = 0;
     static uint16_t target_mode_request = MODE_SLEEP;
+    static uint8_t submode = 0; // for storing the submode
 
     // 4-DOF 解算变量
     float alpha_p, alpha_s, theta_val;
@@ -283,6 +284,10 @@ static void PID_ctrl_routine(void *pvParameters)
                 theta_val = asinf(sqrtf(fmaxf(0.0f, 1.0f - 1.0f / M)));
                 alpha_s = theta_val;
             }
+
+            // ==========================================================
+            // 5. 执行具体模式逻辑
+            // ==========================================================
             switch(mode)
             {
                 case MODE_SLEEP:
@@ -349,13 +354,19 @@ static void PID_ctrl_routine(void *pvParameters)
                         HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                         mode_tick_count++;
                     }
+                    break;
+
                 case MODE_AUTO:
                 default:
-                    break;
+                    continue;
             }
 
-            //4. 进行pid计算
-            error_mA = (float)target_current_mA - now_high_current_mA;
+            // ==========================================================
+            // 6. 进行 PID 计算并更新频率
+            // ==========================================================
+            // 由于配置了负向 Kp，当 target > actual (error > 0) 时，
+            // PID 会拉低输出 fs_output，从而让阻抗变小，电流爬升。
+            pid_compute(pid_handle, error_mA, &fs_output);
 
             HRTIM_Update_Timing(fs_output, alpha_p, alpha_s, theta_val, current_dir);
             LOGI("PID", "%.2f", fs_output);
@@ -365,7 +376,7 @@ static void PID_ctrl_routine(void *pvParameters)
 
 void pid_set_current(uint32_t mA)
 {
-    if(NULL == pid_ctrl_queue_mA)
+    if(NULL != pid_ctrl_queue_mA)
         xQueueSend(pid_ctrl_queue_mA, &mA, portMAX_DELAY);
 }
 
@@ -373,14 +384,14 @@ void pid_ctrl_init(void)
 {
     pid_ctrl_config_t pid_cfg = {
         .init_param = {
-            .kp           = 0.00005f,
-            .ki           = 0.000005f,
-            .kd           = 0.00006f,
-            .max_output   = 0.96f,
-            .min_output   = 0.0f,
-            .max_integral = 1000000.0f,
-            .min_integral = -1000000.0f,
-            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
+            .kp           = -10.0f,
+            .ki           = -1.0f,
+            .kd           = 0.0f,
+            .max_output   = FS_MAX,
+            .min_output   = FS_MIN,
+            .max_integral = 30000.0f,
+            .min_integral = -30000.0f,
+            .cal_type     = PID_CAL_TYPE_POSITIONAL,
         }
     };
     pid_new_control_block(&pid_cfg, &pid_handle);
