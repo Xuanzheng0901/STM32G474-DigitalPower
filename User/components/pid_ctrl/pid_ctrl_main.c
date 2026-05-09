@@ -260,19 +260,8 @@ static void PID_ctrl_routine(void *pvParameters)
             switch(mode)
             {
                 case MODE_SLEEP:
-                    if(mode_tick_count++ == 0)
-                    {
-                        HAL_HRTIM_WaveformCountStop(
-                            &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
-                    }
-                    continue;
-                case MODE_1TO2:
-                    if(mode_tick_count++ == 0)
                     if(mode_tick_count == 0)
                     {
-                        HAL_HRTIM_WaveformCountStart(
-                            &hhrtim1,HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_B);
-                        continue;
                         // 关断所有 8 个管子
                         HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_ALL_OUTPUTS);
                         HRTIM_Update_Timing(FS_MAX, 0.0f, 0.0f, 0.0f, DIR_FORWARD); // 待机设为最高频
