@@ -207,7 +207,10 @@ static void PID_ctrl_routine(void *pvParameters)
     static uint16_t switch_timer = 0;
     static uint16_t target_mode_request = MODE_SLEEP;
 
-    static float M = 0.0f; // 电压增益
+    // 4-DOF 解算变量
+    float alpha_p, alpha_s, theta_val;
+
+    power_dir_t current_dir = DIR_FORWARD;
 
     while(1)
     {
@@ -257,6 +260,29 @@ static void PID_ctrl_routine(void *pvParameters)
                 }
             }
 
+            // ==========================================================
+            // 4. 4-DOF 无功消除解算 (核心算法)
+            // ==========================================================
+            // 限制高压侧输入防止除以 0
+            float v_high = now_high_voltage_mV < 10.0f ? 10.0f : now_high_voltage_mV;
+            float v_low = now_low_voltage_mV;
+
+            // 计算当前的电压增益 M
+            float M = TRANSFORMER_N * v_low / v_high;
+
+            if(M <= 1.0f)
+            {
+                alpha_s = 0.0f;
+                // 用 fmaxf 保证开方不为负数
+                theta_val = asinf(sqrtf(fmaxf(0.0f, 1.0f - M)));
+                alpha_p = theta_val;
+            }
+            else
+            {
+                alpha_p = 0.0f;
+                theta_val = asinf(sqrtf(fmaxf(0.0f, 1.0f - 1.0f / M)));
+                alpha_s = theta_val;
+            }
             switch(mode)
             {
                 case MODE_SLEEP:
@@ -331,13 +357,8 @@ static void PID_ctrl_routine(void *pvParameters)
             //4. 进行pid计算
             error_mA = (float)target_current_mA - now_high_current_mA;
 
-            pid_compute(pid_handle, error_mA, &output);
-            if(output < 0.01f)
-                output = 0.0f;
-
-            // set_mod_ratio_by_factor(output);
-            // LOGI("PID", "output: %.6f", output);
-            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
+            HRTIM_Update_Timing(fs_output, alpha_p, alpha_s, theta_val, current_dir);
+            LOGI("PID", "%.2f", fs_output);
         }
     }
 }
