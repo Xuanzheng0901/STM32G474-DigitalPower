@@ -42,7 +42,7 @@ static void console_task(void *pvParameters)
             {
                 if(freq > 0)
                 {
-                    set_hrtim_prop(freq, phase);
+                    // set_hrtim_prop(freq, phase);
                 }
             }
             else
@@ -58,5 +58,5 @@ static void console_task(void *pvParameters)
 
 void console_init(void)
 {
-    xTaskCreate(console_task, "console_task", 1024, NULL, 5, &consoleTaskHandle);
+    // xTaskCreate(console_task, "console_task", 1024, NULL, 5, &consoleTaskHandle);
 }
