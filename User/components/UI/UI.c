@@ -82,8 +82,6 @@ static void apply_spinbox_style(lv_obj_t *spinbox)
     lv_obj_add_style(spinbox, &style_spinbox_cursor_edited, LV_PART_CURSOR | LV_STATE_EDITED);
 }
 
-extern void set_hrtim_prop(uint32_t freq, int16_t phase_shift_degree);
-
 static void lvgl_event_cb(lv_event_t *evt)
 {
     static uint32_t freq = 100000;
@@ -131,6 +129,7 @@ static void value_update_task(void *arg)
 
 static void mode_btn_event_cb(lv_event_t *e)
 {
+    extern QueueHandle_t pid_ctrl_queue_mA;
     lv_obj_t *obj = lv_event_get_current_target(e);
     int32_t id = -1;
     for(int i = 0; i < 4; i++)
@@ -149,6 +148,8 @@ static void mode_btn_event_cb(lv_event_t *e)
     {
         LOGI("BTN", "%ld", id);
     }
+    id <<= 16;
+    xQueueSend(pid_ctrl_queue_mA, &id, portMAX_DELAY);
 }
 
 static void indev_init(void)
