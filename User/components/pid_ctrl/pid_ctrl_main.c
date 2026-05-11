@@ -95,7 +95,7 @@ static void adc_data_process(uint32_t *data_buf)
 #define HRTIM_CLK_HZ     5.44e9f  // 定时器主时钟: 170M * 32
 #define FS_MAX           135000.0f      // 最高开关频率 (对应极轻载/空载)
 #define FS_MIN           95000.0f       // 最低开关频率 (对应满载)
-#define SWITCH_DELAY_CYCLES 500
+// #define SWITCH_DELAY_CYCLES 500
 #define TRANSFORMER_N (3.33333f)
 
 #define SWITCH_DELAY_CYCLES 50          // 模式切换时在SLEEP模式停留的周期数
@@ -195,86 +195,75 @@ void HRTIM_Update_Timing(float fs_hz, float alpha_p_rad, float alpha_s_rad, floa
     // __HAL_HRTIM_SETCOUNTER(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, 0);
 }
 
+// ==========================================================
+// SPS 控制宏定义
+// ==========================================================
+#define NOMINAL_FREQ     100000.0f  // 固定频率 100kHz
+#define THETA_MAX_RAD    1.5707963f    // 最大移相角 90度 (PI/2)
+#define THETA_MIN_RAD    0.0f       // 最小移相角 0度
+
 static void PID_ctrl_routine(void *pvParameters)
 {
     uint8_t pid_tick = 0;
     static uint16_t target_current_mA = 0;
     static uint16_t target_current_mA_buffer = 0;
     static uint32_t queue_recv_buffer = 0;
-
     static uint32_t mode_tick_count = 0;
 
-    // PID 相关变量
-    static float fs_output = FS_MAX; // 初始化为最高频率(最小功率输出)
+    // PID 变量：此时 PID 输出的是移相角 theta
+    static float theta_output = 0.0f;
     static float error_mA = 0.0f;
-
     static uint32_t *buf_ptr;
 
-    // 模式安全切换使用的状态变量
     static mode_switch_state_t switch_state = SWITCH_STATE_IDLE;
     static uint16_t switch_timer = 0;
     static uint16_t target_mode_request = MODE_SLEEP;
 
-    // 4-DOF 解算变量
-    float alpha_p, alpha_s, theta_val;
-
+    // SPS 模式下，alpha 始终为 0
+    float alpha_p = 0.0f;
+    float alpha_s = 0.0f;
     power_dir_t current_dir = DIR_FORWARD;
 
     while(1)
     {
-        //1. 等待ADC数据
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) == pdTRUE)
         {
-            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
-
-            //2. 查询target是否改变
+            // 1. 处理模式切换逻辑 (保持不变)
             if(pdPASS == xQueueReceive(pid_ctrl_queue_mA, &queue_recv_buffer, 0))
             {
                 uint16_t recv_mode = queue_recv_buffer >> 16;
                 uint16_t recv_target = queue_recv_buffer & 0xFFFF;
 
-                //模式更改
-                if(mode != recv_mode && switch_state == SWITCH_STATE_IDLE) //如果当前不处在切换模式过程中
+                if(mode != recv_mode && switch_state == SWITCH_STATE_IDLE)
                 {
                     target_mode_request = recv_mode;
                     target_current_mA_buffer = recv_target;
-
-                    // 切入 SLEEP 模式进行死区时间的缓冲保护
                     mode = MODE_SLEEP;
-                    switch_state = SWITCH_STATE_SLEEP_TRANSITION; // 等待SLEEP后切换目标模式
+                    switch_state = SWITCH_STATE_SLEEP_TRANSITION;
                     switch_timer = 0;
                     mode_tick_count = 0;
                     pid_reset_ctrl_block(pid_handle);
-                    fs_output = FS_MAX; // 切换时频率重置为最安全状态
+                    theta_output = 0.0f; // 切换时重置移相角为 0
                 }
-                else if(switch_state == SWITCH_STATE_IDLE) //模式没更改, 更新目标电流
+                else if(switch_state == SWITCH_STATE_IDLE)
                 {
-                    target_current_mA = recv_target;
-                    LOGI("PID", "%ld", target_current_mA);
+                    target_current_mA_buffer = recv_target;
                 }
             }
 
-
             adc_data_process(buf_ptr);
 
-            // 3. 状态机处理模式切换
             if(switch_state == SWITCH_STATE_SLEEP_TRANSITION)
             {
-                // 在SLEEP模式关断管子后经过一定周期再切目标模式
                 if(++switch_timer >= SWITCH_DELAY_CYCLES)
                 {
                     mode = target_mode_request;
                     target_current_mA = target_current_mA_buffer;
                     switch_state = SWITCH_STATE_IDLE;
                     mode_tick_count = 0;
-                    pid_reset_ctrl_block(pid_handle);
                 }
             }
 
-            // ==========================================================
-            // 4. 4-DOF 无功消除解算 (核心算法)
-            // ==========================================================
-            // 限制高压侧输入防止除以 0
             float v_high = now_high_voltage_mV < 10.0f ? 10.0f : now_high_voltage_mV;
             float v_low = now_low_voltage_mV;
 
@@ -285,129 +274,114 @@ static void PID_ctrl_routine(void *pvParameters)
             {
                 alpha_s = 0.0f;
                 // 用 fmaxf 保证开方不为负数
-                theta_val = asinf(sqrtf(fmaxf(0.0f, 1.0f - M)));
-                alpha_p = theta_val;
+                theta_output = asinf(sqrtf(fmaxf(0.0f, 1.0f - M)));
+                alpha_p = theta_output;
                 // alpha_p = 0.0f;
             }
             else
             {
                 alpha_p = 0.0f;
-                theta_val = asinf(sqrtf(fmaxf(0.0f, 1.0f - 1.0f / M)));
-                alpha_s = theta_val;
+                theta_output = asinf(sqrtf(fmaxf(0.0f, 1.0f - 1.0f / M)));
+                alpha_s = theta_output;
                 // alpha_s = 0.0f;
             }
 
-            // ==========================================================
-            // 5. 执行具体模式逻辑
-            // ==========================================================
+            // 2. 执行模式具体逻辑
             switch(mode)
             {
                 case MODE_SLEEP:
                     if(mode_tick_count == 0)
                     {
-                        // 关断所有 8 个管子
                         HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_ALL_OUTPUTS);
-                        HRTIM_Update_Timing(FS_MAX, 0.0f, 0.0f, 0.0f, DIR_FORWARD); // 待机设为最高频
+                        HRTIM_Update_Timing(NOMINAL_FREQ, 0, 0, 0, DIR_FORWARD);
                         mode_tick_count++;
-                        submode = 0;
                     }
-                    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-                    continue; // Sleep 下不进行 PID 计算
+                    continue;
 
                 case MODE_1TO2: // 正向充电
                     if(now_low_voltage_mV <= 3000)
                     {
                         submode = 1;
-                        target_current_mA = 500; // 电池过放，使用 500mA 预充
+                        target_current_mA = 500;
                     }
+
                     else
                     {
                         submode = 2;
-                        // target_current_mA = target_current_mA_buffer;
-                        if(target_current_mA < 500)
-                            target_current_mA = 500;
+                        target_current_mA = target_current_mA_buffer;
                     }
+                    // alpha_p = 0.0f;
+                    // alpha_s = 0.0f;
 
-                    // 正向：误差 = 目标电流 - 次级充电电流
+
                     error_mA = (float)target_current_mA - now_low_current_mA;
                     current_dir = DIR_FORWARD;
 
                     if(mode_tick_count == 0)
                     {
-                        // 载入频率控制的PID参数 (负极性配置: 误差大 -> 频率降)
-                        pid_ctrl_parameter_t new_param = {
-                            .kp           = -1.0f,     // 响应比例(按需微调)
-                            .ki           = -0.5f,      // 积分(按需微调)
+                        // SPS 模式下，移相角越大功率越大，所以 Kp 为正
+                        pid_ctrl_parameter_t sps_param = {
+                            .kp           = 0.0001f,     // SPS 角度很敏感，Kp 从小开始
+                            .ki           = 0.00001f,
                             .kd           = 0.0f,
-                            .max_output   = FS_MAX,     // 限制上限
-                            .min_output   = FS_MIN,     // 限制下限
-                            .max_integral = 30000.0f,   // 积分抗饱和上限
-                            .min_integral = -30000.0f,  // 积分抗饱和下限
-                            .cal_type     = PID_CAL_TYPE_INCREMENTAL, // 位置式PID
+                            .max_output   = THETA_MAX_RAD,
+                            .min_output   = THETA_MIN_RAD,
+                            .max_integral = 0.5f,
+                            .min_integral = -0.5f,
+                            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
                         };
-                        pid_update_parameters(pid_handle, &new_param);
-
-                        // 开启所有 8 个管子
+                        pid_update_parameters(pid_handle, &sps_param);
                         HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                         mode_tick_count++;
                     }
                     break;
 
                 case MODE_2TO1: // 反向放电
-                    // 发挥部分一（1）：a,a'端口电压≤10.0V 时，输出预充电流 0.1A
                     if(now_high_voltage_mV <= 10000)
                     {
                         submode = 1;
                         target_current_mA = 100;
                     }
+
                     else
                     {
                         submode = 2;
                         target_current_mA = target_current_mA_buffer;
                     }
 
-                    // 发挥部分一（3）：手动模式放电时，调节 a,a' (高压侧) 充电电流 0.1A~1.0A
-                    error_mA = (float)target_current_mA - fabsf(now_high_current_mA);
-
-
+                    error_mA = (float)target_current_mA + now_high_current_mA;
                     current_dir = DIR_REVERSE;
 
                     if(mode_tick_count == 0)
                     {
-                        // 反向放电：误差符号约定与正向一致，使用相同的负极性PID参数
-                        pid_ctrl_parameter_t new_param = {
-                            .kp           = -10.0f,
-                            .ki           = -1.0f,
+                        pid_ctrl_parameter_t sps_param = {
+                            .kp           = 0.0001f,
+                            .ki           = 0.00001f,
                             .kd           = 0.0f,
-                            .max_output   = FS_MAX,
-                            .min_output   = FS_MIN,
-                            .max_integral = 30000.0f,
-                            .min_integral = -30000.0f,
-                            .cal_type     = PID_CAL_TYPE_POSITIONAL,
+                            .max_output   = THETA_MAX_RAD,
+                            .min_output   = 0.0f,
+                            .max_integral = 0.5f,
+                            .min_integral = -0.5f,
+                            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
                         };
-                        pid_update_parameters(pid_handle, &new_param);
-
+                        pid_update_parameters(pid_handle, &sps_param);
                         HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                         mode_tick_count++;
                     }
                     break;
 
-                case MODE_AUTO:
                 default:
                     continue;
             }
 
-            // ==========================================================
-            // 6. 进行 PID 计算并更新频率
-            // ==========================================================
-            // 由于配置了负向 Kp，当 target > actual (error > 0) 时，
-            // PID 会拉低输出 fs_output，从而让阻抗变小，电流爬升。
-            pid_compute(pid_handle, error_mA, &fs_output);
+            // 3. PID 计算：输出目标 theta
+            pid_compute(pid_handle, error_mA, &theta_output);
 
-            HRTIM_Update_Timing(fs_output, alpha_p, alpha_s, theta_val, current_dir);
+            // 4. 更新硬件：固定频率，调节 theta，alpha 保持为 0
+            HRTIM_Update_Timing(NOMINAL_FREQ, alpha_p, alpha_s, theta_output, current_dir);
             if(++pid_tick >= 100)
             {
-                LOGI("PID", "%.2f %.2f %.2f", now_low_current_mA, error_mA, fs_output);
+                LOGI("PID", "%.2f %.2f %.2f %.2f", now_low_current_mA, now_high_current_mA, error_mA, theta_output);
                 pid_tick = 0;
             }
 
