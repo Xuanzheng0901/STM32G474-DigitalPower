@@ -15,20 +15,22 @@ QueueHandle_t pid_ctrl_queue_mA = NULL; //单位为mV
 static float now_high_current_mA = 0.0f, now_high_voltage_mV = 0.0f;
 static float now_low_current_mA = 0.0f, now_low_voltage_mV = 0.0f;
 static uint16_t mode = MODE_SLEEP;
-uint8_t submode = 0;
+static uint16_t submode = 0;
 
-float get_pid_value(uint8_t index)
+int32_t get_pid_value(uint8_t index)
 {
     if(index == 0)
-        return now_high_voltage_mV;
+        return (int32_t)now_high_voltage_mV;
     if(index == 1)
-        return now_high_current_mA;
+        return (int32_t)now_high_current_mA;
     if(index == 2)
-        return now_low_voltage_mV;
+        return (int32_t)now_low_voltage_mV;
     if(index == 3)
-        return now_low_current_mA;
+        return (int32_t)now_low_current_mA;
+    if(index == 4)
+        return mode | (submode << 8);
 
-    return 0.0f;
+    return 0;
 }
 
 // 把DMA块数据转换为电压/电流工程量，并做电压去噪
@@ -42,15 +44,15 @@ static void adc_data_process(uint32_t *data_buf)
     uint16_t len = ADC_BUFFER_LENGTH / 2;
 
     uint32_t v_sum[2] = {0}; //0为高侧, 1为低侧
-    uint32_t i_sum[2] = {0};
+    int32_t i_sum[2] = {0};
 
     //低16位对应ADC1,差分采样电流, rank1对应高侧
     for(uint32_t i = 0; i < len; i += 2)
     {
         v_sum[0] += data_buf[i] >> 16 & 0x0FFF;
-        i_sum[0] += data_buf[i] & 0x0FFF;
-        v_sum[1] += data_buf[i + 1] >> 16 & 0x0FFF;
-        i_sum[1] += data_buf[i + 1] & 0x0FFF;
+        i_sum[0] += (int32_t)(data_buf[i] & 0x0FFF) - 2047;
+        v_sum[1] += data_buf[i + 1] >> 16 & 0xFFFF;
+        i_sum[1] += (int32_t)(data_buf[i + 1] & 0xFFFF) - 2047;
     }
 
     // 计算平均值 (每个通道采样 len/2 次)
@@ -59,10 +61,15 @@ static void adc_data_process(uint32_t *data_buf)
     float i_avg_high = (float)i_sum[0] / ((float)len / 2.0f);
     float i_avg_low = (float)i_sum[1] / ((float)len / 2.0f);
 
-    float raw_high_voltage_mV = v_avg_high * (3000.0f / 4095.0f);
-    float raw_high_current_A = i_avg_high * (3000.0f / 4095.0f);
-    float raw_low_voltage_mV = v_avg_low * (3000.0f / 4095.0f);
-    float raw_low_current_A = i_avg_low * (3000.0f / 4095.0f);
+    if(i_avg_high <= 0.0f && i_avg_high >= -10.0f)
+        i_avg_high = 0.0f;
+    if(i_avg_low <= 0.0f && i_avg_low >= -10.0f)
+        i_avg_low = 0.0f;
+
+    float raw_high_voltage_mV = v_avg_high * (3000.0f / 4095.0f) * 6.666666f;
+    float raw_high_current_A = i_avg_high * (3000.0f / 2048.0f) / 8.2f * 20.0f;
+    float raw_low_voltage_mV = v_avg_low * (3000.0f / 4095.0f) * 6.666666f;
+    float raw_low_current_A = i_avg_low * (3000.0f / 2048.0f) / 8.2f * 20.0f;
 
     // 使用第一次测量值作为初始状态可以加快滤波器的收敛速度
     if(!is_kf_initialized)
@@ -190,6 +197,7 @@ void HRTIM_Update_Timing(float fs_hz, float alpha_p_rad, float alpha_s_rad, floa
 
 static void PID_ctrl_routine(void *pvParameters)
 {
+    uint8_t pid_tick = 0;
     static uint16_t target_current_mA = 0;
     static uint16_t target_current_mA_buffer = 0;
     static uint32_t queue_recv_buffer = 0;
@@ -206,7 +214,6 @@ static void PID_ctrl_routine(void *pvParameters)
     static mode_switch_state_t switch_state = SWITCH_STATE_IDLE;
     static uint16_t switch_timer = 0;
     static uint16_t target_mode_request = MODE_SLEEP;
-    static uint8_t submode = 0; // for storing the submode
 
     // 4-DOF 解算变量
     float alpha_p, alpha_s, theta_val;
@@ -218,7 +225,7 @@ static void PID_ctrl_routine(void *pvParameters)
         //1. 等待ADC数据
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) == pdTRUE)
         {
-            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
 
             //2. 查询target是否改变
             if(pdPASS == xQueueReceive(pid_ctrl_queue_mA, &queue_recv_buffer, 0))
@@ -243,6 +250,7 @@ static void PID_ctrl_routine(void *pvParameters)
                 else if(switch_state == SWITCH_STATE_IDLE) //模式没更改, 更新目标电流
                 {
                     target_current_mA = recv_target;
+                    LOGI("PID", "%ld", target_current_mA);
                 }
             }
 
@@ -279,12 +287,14 @@ static void PID_ctrl_routine(void *pvParameters)
                 // 用 fmaxf 保证开方不为负数
                 theta_val = asinf(sqrtf(fmaxf(0.0f, 1.0f - M)));
                 alpha_p = theta_val;
+                // alpha_p = 0.0f;
             }
             else
             {
                 alpha_p = 0.0f;
                 theta_val = asinf(sqrtf(fmaxf(0.0f, 1.0f - 1.0f / M)));
                 alpha_s = theta_val;
+                // alpha_s = 0.0f;
             }
 
             // ==========================================================
@@ -299,7 +309,9 @@ static void PID_ctrl_routine(void *pvParameters)
                         HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_ALL_OUTPUTS);
                         HRTIM_Update_Timing(FS_MAX, 0.0f, 0.0f, 0.0f, DIR_FORWARD); // 待机设为最高频
                         mode_tick_count++;
+                        submode = 0;
                     }
+                    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
                     continue; // Sleep 下不进行 PID 计算
 
                 case MODE_1TO2: // 正向充电
@@ -311,7 +323,9 @@ static void PID_ctrl_routine(void *pvParameters)
                     else
                     {
                         submode = 2;
-                        target_current_mA = target_current_mA_buffer;
+                        // target_current_mA = target_current_mA_buffer;
+                        if(target_current_mA < 500)
+                            target_current_mA = 500;
                     }
 
                     // 正向：误差 = 目标电流 - 次级充电电流
@@ -322,14 +336,14 @@ static void PID_ctrl_routine(void *pvParameters)
                     {
                         // 载入频率控制的PID参数 (负极性配置: 误差大 -> 频率降)
                         pid_ctrl_parameter_t new_param = {
-                            .kp           = -10.0f,     // 响应比例(按需微调)
-                            .ki           = -1.0f,      // 积分(按需微调)
+                            .kp           = -1.0f,     // 响应比例(按需微调)
+                            .ki           = -0.5f,      // 积分(按需微调)
                             .kd           = 0.0f,
                             .max_output   = FS_MAX,     // 限制上限
                             .min_output   = FS_MIN,     // 限制下限
                             .max_integral = 30000.0f,   // 积分抗饱和上限
                             .min_integral = -30000.0f,  // 积分抗饱和下限
-                            .cal_type     = PID_CAL_TYPE_POSITIONAL, // 位置式PID
+                            .cal_type     = PID_CAL_TYPE_INCREMENTAL, // 位置式PID
                         };
                         pid_update_parameters(pid_handle, &new_param);
 
@@ -391,15 +405,22 @@ static void PID_ctrl_routine(void *pvParameters)
             pid_compute(pid_handle, error_mA, &fs_output);
 
             HRTIM_Update_Timing(fs_output, alpha_p, alpha_s, theta_val, current_dir);
-            LOGI("PID", "%.2f", fs_output);
+            if(++pid_tick >= 100)
+            {
+                LOGI("PID", "%.2f %.2f %.2f", now_low_current_mA, error_mA, fs_output);
+                pid_tick = 0;
+            }
+
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
         }
     }
 }
 
 void pid_set_current(uint32_t mA)
 {
+    uint32_t buf = mode << 16 | mA;
     if(NULL != pid_ctrl_queue_mA)
-        xQueueSend(pid_ctrl_queue_mA, &mA, portMAX_DELAY);
+        xQueueSend(pid_ctrl_queue_mA, &buf, portMAX_DELAY);
 }
 
 void pid_ctrl_init(void)
