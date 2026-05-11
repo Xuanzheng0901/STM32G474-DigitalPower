@@ -84,8 +84,8 @@ static void apply_spinbox_style(lv_obj_t *spinbox)
 
 static void lvgl_event_cb(lv_event_t *evt)
 {
-    static uint32_t freq = 100000;
-    static int16_t phase = 0;
+    // static uint32_t freq = 100000;
+    // static int16_t phase = 0;
     int32_t value = lv_spinbox_get_value(lv_event_get_current_target(evt));
     // // ESP_LOGI(TAG, "Value changed: %ld", value);
     // if(lv_event_get_current_target(evt) == voltage_spinbox)
@@ -93,17 +93,8 @@ static void lvgl_event_cb(lv_event_t *evt)
     //     freq = value * 1000;
     //
     //     // pid_set_voltage(value * 10);
-    //     // snprintf(value_buf[0], 32, "%ld", value);
-    //     // lv_obj_invalidate(voltage_label);
+    pid_set_current(value * 10);
     // }
-    // else if(lv_event_get_current_target(evt) == current_spinbox)
-    // {
-    //     phase = value;
-    //     // set_current(value * 10);
-    //     // snprintf(value_buf[1], 32, "%ld", value);
-    //     // lv_obj_invalidate(current_label);
-    // }
-    // set_hrtim_prop(freq, phase);
 }
 
 static void value_update_task(void *arg)
