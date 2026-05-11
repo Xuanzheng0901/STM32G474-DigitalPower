@@ -35,7 +35,7 @@ static lv_style_t style_spinbox_cursor_edited;
 
 static char value_buf[2][3][32] = {{"10.00", "1.00", "10.00"}, {"15.00", "2.00", "30.00"}};
 static const char *mode_text[] = {"-", "→", "←", "↔", NULL};
-static char status_buf[16] = "预充电";
+static char status_buf[16] = "-";
 mode_t current_mode = MODE_1TO2;
 
 static void init_spinbox_style(void)
@@ -111,19 +111,39 @@ static void value_update_task(void *arg)
     while(1)
     {
         vTaskDelay(100);
-        // float voltage = get_voltage_value(0) / 1000.0f;
-        // float current = get_voltage_value(1);
-        // snprintf(value_buf[0][0], 6, "%5.2f", voltage);
-        // snprintf(value_buf[0][1], 5, "%4.2f", current);
-        // snprintf(value_buf[0][2], 6, "%5.2f", voltage * current);
-        //
-        // if(lvgl_port_lock(portMAX_DELAY))
-        // {
-        //     lv_label_set_text_static(voltage_label1, value_buf[0][0]);
-        //     lv_label_set_text_static(current_label1, value_buf[0][1]);
-        //     lv_label_set_text_static(power_value_label1, value_buf[0][2]);
-        //     lvgl_port_unlock();
-        // }
+
+        float high_voltage = get_pid_value(0) / 1000.0f;
+        float high_current = get_pid_value(1) / 1000.0f;
+        float low_voltage = get_pid_value(2) / 1000.0f;
+        float low_current = get_pid_value(3) / 1000.0f;
+        uint16_t status = get_pid_value(4);
+        uint8_t mode = status & 0xF;
+        uint8_t submode = status >> 8;
+
+        snprintf(value_buf[0][0], 6, "%5.2f", high_voltage);
+        snprintf(value_buf[0][1], 6, "%5.2f", high_current);
+        snprintf(value_buf[0][2], 6, "%5.2f", high_voltage * high_current);
+
+        snprintf(value_buf[1][0], 6, "%5.2f", low_voltage);
+        snprintf(value_buf[1][1], 6, "%5.2f", low_current);
+        snprintf(value_buf[1][2], 6, "%5.2f", low_voltage * low_current);
+
+        if(mode != MODE_AUTO)
+            snprintf(status_buf, 13, (submode == 0 || mode == MODE_SLEEP) ? "-" : (submode == 1 ? "预充电" : "可调恒流"));
+
+        if(lvgl_port_lock(portMAX_DELAY))
+        {
+            lv_label_set_text_static(voltage_label1, value_buf[0][0]);
+            lv_label_set_text_static(current_label1, value_buf[0][1]);
+            lv_label_set_text_static(power_value_label1, value_buf[0][2]);
+
+            lv_label_set_text_static(voltage_label2, value_buf[1][0]);
+            lv_label_set_text_static(current_label2, value_buf[1][1]);
+            lv_label_set_text_static(power_value_label2, value_buf[1][2]);
+
+            lv_label_set_text_static(status_label, status_buf);
+            lvgl_port_unlock();
+        }
     }
 }
 
