@@ -11,7 +11,7 @@ typedef enum {
 
 void pid_ctrl_init(void);
 
-float get_pid_value(uint8_t index);
+int32_t get_pid_value(uint8_t index);
 
 void pid_set_current(uint32_t mA);
 
