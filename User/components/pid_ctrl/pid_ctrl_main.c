@@ -83,10 +83,10 @@ static void adc_data_process(uint32_t *data_buf)
         is_kf_initialized = 1;
     }
 
-    now_high_voltage_mV = kalman_1d_update(&kf_high_voltage, raw_high_voltage_mV);
-    now_high_current_mA = kalman_1d_update(&kf_high_current, raw_high_current_A);
-    now_low_voltage_mV = kalman_1d_update(&kf_low_voltage, raw_low_voltage_mV);
-    now_low_current_mA = kalman_1d_update(&kf_low_current, raw_low_current_A);
+    now_high_voltage_mV = trunc(kalman_1d_update(&kf_high_voltage, raw_high_voltage_mV));
+    now_high_current_mA = trunc(kalman_1d_update(&kf_high_current, raw_high_current_A));
+    now_low_voltage_mV = trunc(kalman_1d_update(&kf_low_voltage, raw_low_voltage_mV));
+    now_low_current_mA = trunc(kalman_1d_update(&kf_low_current, raw_low_current_A));
 }
 
 // ==========================================================
