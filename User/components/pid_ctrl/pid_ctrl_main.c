@@ -198,9 +198,9 @@ void HRTIM_Update_Timing(float fs_hz, float alpha_p_rad, float alpha_s_rad, floa
 // ==========================================================
 // SPS 控制宏定义
 // ==========================================================
-#define NOMINAL_FREQ     100000.0f  // 固定频率 100kHz
-#define THETA_MAX_RAD    1.5707963f    // 最大移相角 90度 (PI/2)
-#define THETA_MIN_RAD    0.0f       // 最小移相角 0度
+#define NOMINAL_FREQ     90000.0f  // 固定频率 100kHz
+#define THETA_MAX_RAD    (1.5707963f-0.0174533f*30.0f)   // 最大移相角 90度 (PI/2)
+#define THETA_MIN_RAD    (-0.0174533f*2.0f)       // 最小移相角 0度
 
 static void PID_ctrl_routine(void *pvParameters)
 {
