@@ -333,11 +333,11 @@ static void PID_ctrl_routine(void *pvParameters)
                         pid_ctrl_parameter_t sps_param = {
                             .kp           = 0.0001f,     // SPS 角度很敏感，Kp 从小开始
                             .ki           = 0.00001f,
-                            .kd           = 0.0f,
+                            .kd           = 0.00001f,
                             .max_output   = THETA_MAX_RAD,
                             .min_output   = THETA_MIN_RAD,
-                            .max_integral = 0.5f,
-                            .min_integral = -0.5f,
+                            .max_integral = 100.0f,
+                            .min_integral = -100.0f,
                             .cal_type     = PID_CAL_TYPE_INCREMENTAL,
                         };
                         pid_update_parameters(pid_handle, &sps_param);
@@ -375,11 +375,11 @@ static void PID_ctrl_routine(void *pvParameters)
                         pid_ctrl_parameter_t sps_param = {
                             .kp           = 0.0001f,
                             .ki           = 0.00001f,
-                            .kd           = 0.0f,
+                            .kd           = 0.00001f,
                             .max_output   = THETA_MAX_RAD,
                             .min_output   = 0.0f,
-                            .max_integral = 0.5f,
-                            .min_integral = -0.5f,
+                            .max_integral = 100.0f,
+                            .min_integral = -100.0f,
                             .cal_type     = PID_CAL_TYPE_INCREMENTAL,
                         };
                         pid_update_parameters(pid_handle, &sps_param);
