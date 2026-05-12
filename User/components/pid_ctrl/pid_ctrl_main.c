@@ -396,10 +396,10 @@ static void PID_ctrl_routine(void *pvParameters)
             pid_compute(pid_handle, error_mA, &theta_output);
 
             // 4. 更新硬件：固定频率，调节 theta，alpha 保持为 0
-            HRTIM_Update_Timing(NOMINAL_FREQ, alpha_p, alpha_s, theta_output, current_dir);
+            HRTIM_Update_Timing(current_freq, alpha_p, alpha_s, theta_output, current_dir);
             if(++pid_tick >= 100)
             {
-                LOGI("PID", "%.2f %.2f %.2f %.2f", now_low_current_mA, now_high_current_mA, error_mA, theta_output);
+                LOGI("PID", "%.2f %.2f %.2f %.2f", alpha_p, alpha_s, error_mA, theta_output);
                 pid_tick = 0;
             }
 
