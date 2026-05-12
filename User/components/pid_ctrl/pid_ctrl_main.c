@@ -224,6 +224,8 @@ static void PID_ctrl_routine(void *pvParameters)
     float alpha_s = 0.0f;
     power_dir_t current_dir = DIR_FORWARD;
 
+    float current_freq = NOMINAL_FREQ;
+
     while(1)
     {
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) == pdTRUE)
@@ -303,14 +305,22 @@ static void PID_ctrl_routine(void *pvParameters)
                     {
                         submode = 1;
                         target_current_mA = 500;
+                        current_freq = 135000.0f;
                     }
 
                     else
                     {
                         submode = 2;
                         target_current_mA = target_current_mA_buffer;
+                        if(target_current_mA < 500)
+                        {
+                            target_current_mA = 500;
+                        }
+                        current_freq = NOMINAL_FREQ + (3100 - target_current_mA) * 15.0f;
+                        // alpha_p = 0.0f;
+                        // alpha_s = 0.0f;
                     }
-                    // alpha_p = 0.0f;
+                    alpha_p = 0.0f;
                     // alpha_s = 0.0f;
 
 
@@ -341,13 +351,21 @@ static void PID_ctrl_routine(void *pvParameters)
                     {
                         submode = 1;
                         target_current_mA = 100;
+                        current_freq = 135000.0f;
                     }
 
                     else
                     {
                         submode = 2;
                         target_current_mA = target_current_mA_buffer;
+                        if(target_current_mA < 100)
+                        {
+                            target_current_mA = 100;
+                        }
+                        current_freq = NOMINAL_FREQ + (1000 - target_current_mA) * 40.0f;
                     }
+
+                    alpha_p = 0.0f;
 
                     error_mA = (float)target_current_mA + now_high_current_mA;
                     current_dir = DIR_REVERSE;
