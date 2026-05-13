@@ -393,7 +393,39 @@ static void PID_ctrl_routine(void *pvParameters)
                         mode_tick_count++;
                     }
                     break;
-
+                case MODE_AUTO:
+                    target_current_mA = target_current_mA_buffer;
+                    if(target_current_mA < 500)
+                        target_current_mA = 500;
+                    if(now_high_voltage_mV <= 11000)
+                    {
+                        submode = 1;
+                        current_dir = DIR_REVERSE;
+                        error_mA = ((float)target_current_mA + now_low_current_mA);
+                    }
+                    else if(now_high_voltage_mV >= 11500)
+                    {
+                        submode = 2;
+                        current_dir = DIR_FORWARD;
+                        error_mA = (float)target_current_mA - now_low_current_mA;
+                    }
+                    if(mode_tick_count == 0)
+                    {
+                        pid_ctrl_parameter_t sps_param = {
+                            .kp           = 0.0001f,
+                            .ki           = 0.00001f,
+                            .kd           = 0.00001f,
+                            .max_output   = THETA_MAX_RAD,
+                            .min_output   = 0.01f,
+                            .max_integral = 100.0f,
+                            .min_integral = -100.0f,
+                            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
+                        };
+                        pid_update_parameters(pid_handle, &sps_param);
+                        HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
+                        mode_tick_count++;
+                    }
+                    break;
                 default:
                     continue;
             }
