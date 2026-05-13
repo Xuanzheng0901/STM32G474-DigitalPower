@@ -341,7 +341,7 @@ static void home_page_init(void)
         lv_spinbox_set_range(current_spinbox, 0, 310);
         lv_spinbox_set_digit_format(current_spinbox, 3, 1);
         lv_spinbox_set_step(current_spinbox, 1);
-        lv_spinbox_set_value(current_spinbox, 20);
+        lv_spinbox_set_value(current_spinbox, 0);
 
         lv_obj_set_content_height(current_spinbox, 12);
         lv_obj_set_size(current_spinbox, 32, 12);
