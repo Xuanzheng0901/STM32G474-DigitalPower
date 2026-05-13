@@ -322,7 +322,7 @@ static void PID_ctrl_routine(void *pvParameters)
                         // alpha_p = 0.0f;
                         // alpha_s = 0.0f;
                     }
-                    alpha_p = 0.0f;
+                    // alpha_p = 0.0f;
                     // alpha_s = 0.0f;
 
 
@@ -364,10 +364,14 @@ static void PID_ctrl_routine(void *pvParameters)
                         {
                             target_current_mA = 100;
                         }
+                        if(target_current_mA > 1000)
+                        {
+                            target_current_mA = 1000;
+                        }
                         current_freq = NOMINAL_FREQ + (1000 - target_current_mA) * 40.0f;
                     }
-
-                    alpha_p = 0.0f;
+                    // alpha_s = 0.0f;
+                    // alpha_p = 0.0f;
 
                     error_mA = (float)target_current_mA + now_high_current_mA;
                     current_dir = DIR_REVERSE;
