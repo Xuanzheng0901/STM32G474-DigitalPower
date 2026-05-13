@@ -12,8 +12,8 @@ extern QueueHandle_t adc_queue;
 
 static pid_ctrl_block_handle_t pid_handle = NULL;
 QueueHandle_t pid_ctrl_queue_mA = NULL; //单位为mV
-static uint32_t now_high_current_mA = 0, now_high_voltage_mV = 0;
-static int32_t now_low_current_mA = 0, now_low_voltage_mV = 0;
+static uint32_t now_low_voltage_mV = 0, now_high_voltage_mV = 0;
+static int32_t now_high_current_mA, now_low_current_mA = 0;
 static uint16_t mode = MODE_SLEEP;
 static uint16_t submode = 0;
 
@@ -22,9 +22,9 @@ int32_t get_pid_value(uint8_t index)
     if(index == 0)
         return (int32_t)now_high_voltage_mV;
     if(index == 1)
-        return (int32_t)0now_high_current_mA;
+        return now_high_current_mA;
     if(index == 2)
-        return now_low_voltage_mV;
+        return (int32_t)now_low_voltage_mV;
     if(index == 3)
         return now_low_current_mA;
     if(index == 4)
