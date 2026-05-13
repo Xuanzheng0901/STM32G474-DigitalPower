@@ -67,9 +67,11 @@ static void adc_data_process(uint32_t *data_buf)
         i_avg_low = 0.0f;
 
     float raw_high_voltage_mV = v_avg_high * (3000.0f / 4095.0f) * 6.666666f;
-    float raw_high_current_A = i_avg_high * (3000.0f / 2048.0f) / 8.2f * 20.0f;
+    float raw_high_current_A = (i_avg_high * (3000.0f / 4095.0f) / 8.2f * 20.0f);
+    // * 0.983306f - 49.5322f;
     float raw_low_voltage_mV = v_avg_low * (3000.0f / 4095.0f) * 6.666666f;
-    float raw_low_current_A = i_avg_low * (3000.0f / 2048.0f) / 8.2f * 20.0f;
+    float raw_low_current_A = (i_avg_low * (3000.0f / 4095.0f) / 8.2f * 20.0f);
+    // * 0.983306f - 49.5322f;
 
     // 使用第一次测量值作为初始状态可以加快滤波器的收敛速度
     if(!is_kf_initialized)
