@@ -383,7 +383,7 @@ static void PID_ctrl_routine(void *pvParameters)
                             .ki           = 0.00001f,
                             .kd           = 0.00001f,
                             .max_output   = THETA_MAX_RAD,
-                            .min_output   = 0.0f,
+                            .min_output   = 0.01f,
                             .max_integral = 100.0f,
                             .min_integral = -100.0f,
                             .cal_type     = PID_CAL_TYPE_INCREMENTAL,
