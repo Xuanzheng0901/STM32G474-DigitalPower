@@ -12,8 +12,8 @@ extern QueueHandle_t adc_queue;
 
 static pid_ctrl_block_handle_t pid_handle = NULL;
 QueueHandle_t pid_ctrl_queue_mA = NULL; //单位为mV
-static float now_high_current_mA = 0.0f, now_high_voltage_mV = 0.0f;
-static float now_low_current_mA = 0.0f, now_low_voltage_mV = 0.0f;
+static uint32_t now_high_current_mA = 0, now_high_voltage_mV = 0;
+static int32_t now_low_current_mA = 0, now_low_voltage_mV = 0;
 static uint16_t mode = MODE_SLEEP;
 static uint16_t submode = 0;
 
@@ -22,11 +22,11 @@ int32_t get_pid_value(uint8_t index)
     if(index == 0)
         return (int32_t)now_high_voltage_mV;
     if(index == 1)
-        return (int32_t)now_high_current_mA;
+        return (int32_t)0now_high_current_mA;
     if(index == 2)
-        return (int32_t)now_low_voltage_mV;
+        return now_low_voltage_mV;
     if(index == 3)
-        return (int32_t)now_low_current_mA;
+        return now_low_current_mA;
     if(index == 4)
         return mode | (submode << 8);
 
@@ -83,10 +83,10 @@ static void adc_data_process(uint32_t *data_buf)
         is_kf_initialized = 1;
     }
 
-    now_high_voltage_mV = trunc(kalman_1d_update(&kf_high_voltage, raw_high_voltage_mV));
-    now_high_current_mA = trunc(kalman_1d_update(&kf_high_current, raw_high_current_A));
-    now_low_voltage_mV = trunc(kalman_1d_update(&kf_low_voltage, raw_low_voltage_mV));
-    now_low_current_mA = trunc(kalman_1d_update(&kf_low_current, raw_low_current_A));
+    now_high_voltage_mV = (uint32_t)kalman_1d_update(&kf_high_voltage, raw_high_voltage_mV);
+    now_high_current_mA = (int32_t)kalman_1d_update(&kf_high_current, raw_high_current_A);
+    now_low_voltage_mV = (uint32_t)kalman_1d_update(&kf_low_voltage, raw_low_voltage_mV);
+    now_low_current_mA = (int32_t)kalman_1d_update(&kf_low_current, raw_low_current_A);
 }
 
 // ==========================================================
