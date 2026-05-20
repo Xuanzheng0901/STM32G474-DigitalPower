@@ -8,18 +8,39 @@
 #include "kalman.h"
 #include "PID.h"
 
-extern QueueHandle_t adc_queue;
+/* ================================================================
+ *  硬件与控制参数宏定义
+ * ================================================================ */
+#define HRTIM_CLK_HZ        5.44e9f
+#define TRANSFORMER_N       3.33333f    /* 匝比 10:3 ≈ 3.33 */
 
+/* 频率调节范围 */
+#define FS_MAX              200000.0f   /* 频率上限（最小功率点）*/
+#define FS_MIN               95000.0f   /* 频率下限（最大功率点，须 > fr）*/
+
+/* 移相角限制 (弧度) */
+#define THETA_MAX           1.50f       /* 约 86 度 */
+#define THETA_MIN           0.01f       /* 趋近 0 度 */
+#define THETA_FF_BASE       0.60f       /* M=1 时的基础前馈角度 (约 35 度)，保证功率基数 */
+
+#define SWITCH_DELAY_CYCLES    50
+#define HRTIM_ALL_OUTPUTS (HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2 | \
+                           HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TB2 | \
+                           HRTIM_OUTPUT_TC1 | HRTIM_OUTPUT_TC2 | \
+                           HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2)
+
+/* ================================================================
+ *  全局变量
+ * ================================================================ */
+extern QueueHandle_t adc_queue;
 static pid_ctrl_block_handle_t pid_handle = NULL;
 QueueHandle_t pid_ctrl_queue_mA = NULL;
+
 static uint32_t now_low_voltage_mV = 0, now_high_voltage_mV = 0;
 static int32_t now_high_current_mA = 0, now_low_current_mA = 0;
 static uint16_t mode = MODE_SLEEP;
 static uint16_t submode = 0;
 
-/* ================================================================
- *  公共状态读取接口
- * ================================================================ */
 int32_t get_pid_value(uint8_t index)
 {
     switch(index)
@@ -94,83 +115,52 @@ static void adc_data_process(uint32_t *data_buf)
 }
 
 /* ================================================================
- *  硬件参数宏定义
+ *  原子化 HRTIM 时序更新函数
  * ================================================================ */
-#define HRTIM_CLK_HZ        5.44e9f
-
-/*
- * 频率范围：须始终工作在谐振频率以上（过谐振区），保证 ZVS。
- * 与谐振频率 fr 的关系：FS_MIN > fr（此处 fr ≈ 91 kHz）
- * 频率越低 → Xp.u 越小 → 电流越大（满载）
- * 频率越高 → Xp.u 越大 → 电流越小（空载/轻载）
- */
-#define FS_MAX              200000.0f   /* 最高频率 → 最小电流（轻载/初始化）*/
-#define FS_MIN               90000.0f   /* 最低频率 → 最大电流（须 > fr）    */
-
-#define TRANSFORMER_N         3.33333f  /* 变压器匝数比 n = N1/N2             */
-#define SWITCH_DELAY_CYCLES      50     /* 模式切换时 SLEEP 停留周期数         */
-
-/*
- * M 裁剪范围（参考 Yaqoob 2019 Table I）
- * M 在 [0.95, 1.05] 区间内角度退化，裁剪后维持最小可用角度
- */
-#define M_BUCK_CLIP   0.9f   /* M ≤ 1 时的上限裁剪 */
-#define M_BOOST_CLIP  1.1f   /* M > 1 时的下限裁剪 */
-#define M_ABS_MIN     0.20f
-#define M_ABS_MAX     2.00f
-
-#define HRTIM_ALL_OUTPUTS (HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2 | \
-                           HRTIM_OUTPUT_TB1 | HRTIM_OUTPUT_TB2 | \
-                           HRTIM_OUTPUT_TC1 | HRTIM_OUTPUT_TC2 | \
-                           HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2)
-
-/* ================================================================
- *  HRTIM 时序更新（保持原版，无改动）
- * ================================================================ */
-void HRTIM_Update_Timing(float fs_hz, float alpha_p_rad, float alpha_s_rad,
-                         float theta_rad, power_dir_t dir)
+void HRTIM_Update_Timing(float fs_hz, float alpha_p_rad, float alpha_s_rad, float theta_rad, power_dir_t dir)
 {
-    if(fs_hz > FS_MAX)
-        fs_hz = FS_MAX;
-    if(fs_hz < FS_MIN)
-        fs_hz = FS_MIN;
+    /* 频率硬限幅 */
+    if(fs_hz > 250000.0f)
+        fs_hz = 250000.0f;
+    if(fs_hz < 80000.0f)
+        fs_hz = 80000.0f;
 
-    uint32_t new_period_ticks = (uint32_t)(HRTIM_CLK_HZ / fs_hz);
-    uint32_t half_period = new_period_ticks / 2;
-    float rad_to_ticks = (float)new_period_ticks / (2.0f * 3.14159265f);
+    uint32_t period = (uint32_t)(HRTIM_CLK_HZ / fs_hz);
+    uint32_t half_p = period / 2;
+    float rad_to_ticks = (float)period / (2.0f * 3.14159265f);
 
     uint32_t alpha_p_t = (uint32_t)(alpha_p_rad * rad_to_ticks);
     uint32_t alpha_s_t = (uint32_t)(alpha_s_rad * rad_to_ticks);
     uint32_t theta_t = (uint32_t)(theta_rad * rad_to_ticks);
 
     uint32_t cmp1 = 0;
-    uint32_t cmp3 = (cmp1 + half_period + alpha_p_t) % new_period_ticks;
-    uint32_t cmp2 = (dir == DIR_FORWARD)
-                        ? (cmp1 + theta_t) % new_period_ticks
-                        : (cmp1 + new_period_ticks - theta_t) % new_period_ticks;
-    uint32_t cmp4 = (cmp2 + half_period + alpha_s_t) % new_period_ticks;
+    uint32_t cmp3 = (cmp1 + half_p + alpha_p_t) % period;
+    uint32_t cmp2 = (dir == DIR_FORWARD) ? (cmp1 + theta_t) % period : (cmp1 + period - theta_t) % period;
+    uint32_t cmp4 = (cmp2 + half_p + alpha_s_t) % period;
 
+    /* 硬件极值保护 */
     if(cmp2 < 96)
         cmp2 = 96;
     if(cmp4 < 96)
         cmp4 = 96;
-    if(cmp2 >= new_period_ticks)
-        cmp2 = new_period_ticks - 1;
-    if(cmp3 >= new_period_ticks)
-        cmp3 = new_period_ticks - 1;
-    if(cmp4 >= new_period_ticks)
-        cmp4 = new_period_ticks - 1;
+    if(cmp2 >= period)
+        cmp2 = period - 1;
+    if(cmp3 >= period)
+        cmp3 = period - 1;
+    if(cmp4 >= period)
+        cmp4 = period - 1;
 
-    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_MASTER, new_period_ticks);
-    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, new_period_ticks);
-    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, new_period_ticks);
-    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, new_period_ticks);
-    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, new_period_ticks);
+    /* 影子寄存器写入 */
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_MASTER, period);
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, period);
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, period);
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, period);
+    __HAL_HRTIM_SETPERIOD(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, period);
 
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, half_period);
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, half_period);
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, HRTIM_COMPAREUNIT_3, half_period);
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_3, half_period);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, half_p);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_3, half_p);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, HRTIM_COMPAREUNIT_3, half_p);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_3, half_p);
 
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_1, cmp1);
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_2, cmp2);
@@ -179,65 +169,17 @@ void HRTIM_Update_Timing(float fs_hz, float alpha_p_rad, float alpha_s_rad,
 }
 
 /* ================================================================
- *  4-DOF 最优角度计算
- *
- *  依据 Yaqoob 2019 eq.(20)：
- *    M ≤ 1 → αp = θ = arcsin(√(1-M)),   αs = 0
- *    M > 1 → αs = θ = arcsin(√(1-1/M)), αp = 0
- *
- *  注意：θ 与 αp/αs 完全由 M 决定，与频率无关。
- *        频率 fs 是独立的功率调节量（由 PID 控制）。
+ *  PID 参数定义 (增量式，正增益)
+ *  正增益逻辑：error > 0 -> pid_output 增大 -> 增加传输功率
  * ================================================================ */
-static void calc_4dof_angles(float M, float *alpha_p, float *alpha_s, float *theta)
-{
-    /* 全局限幅 */
-    if(M < M_ABS_MIN)
-        M = M_ABS_MIN;
-    if(M > M_ABS_MAX)
-        M = M_ABS_MAX;
-
-    if(M <= 1.0f)
-    {
-        /*
-         * 当 M 接近 1 时 sqrt(1-M)→0，θ→0，软开关条件退化。
-         * 按论文 Table I 裁剪到 0.95，维持最小可用角度。
-         */
-        if(M > M_BUCK_CLIP)
-            M = M_BUCK_CLIP;
-
-        float ang = asinf(sqrtf(1.0f - M));
-        *theta = ang;
-        *alpha_p = ang;
-        *alpha_s = 0.0f;
-    }
-    else
-    {
-        /* 同理，M 接近 1 时裁剪到 1.05 */
-        if(M < M_BOOST_CLIP)
-            M = M_BOOST_CLIP;
-
-        float ang = asinf(sqrtf(1.0f - 1.0f / M));
-        *theta = ang;
-        *alpha_s = ang;
-        *alpha_p = 0.0f;
-    }
-}
-
-/* ================================================================
- *  PID 参数（调频模式，增量式，负增益）
- *
- *  负增益原因：
- *    fs ↑  →  Xp.u ↑  →  电流 ↓
- *    误差 > 0（需要更多电流）→ PID 输出负增量 → fs ↓ → 电流 ↑
- * ================================================================ */
-static const pid_ctrl_parameter_t FM_PID_PARAM = {
-    .kp           = -5.0f,
-    .ki           = -1.5f,
-    .kd           = -0.1f,
-    .max_output   = FS_MAX,
-    .min_output   = FS_MIN,
-    .max_integral = 30000.0f,
-    .min_integral = -30000.0f,
+static const pid_ctrl_parameter_t HYBRID_PID_PARAM = {
+    .kp           = 0.00005f,   /* 针对 0.0~1.0 虚拟量程标定 */
+    .ki           = 0.00002f,
+    .kd           = 0.000001f,
+    .max_output   = 1.5f,       /* 允许进入升相区 */
+    .min_output   = -0.5f,      /* 允许进入降相区 */
+    .max_integral = 50.0f,
+    .min_integral = -50.0f,
     .cal_type     = PID_CAL_TYPE_INCREMENTAL,
 };
 
@@ -258,12 +200,11 @@ static void PID_ctrl_routine(void *pvParameters)
     static uint16_t sw_timer = 0;
     static uint16_t target_mode_req = MODE_SLEEP;
 
-    /* 控制量 */
-    static float fs_output = FS_MAX;
+    /* 控制核心变量 */
+    static float pid_output = 0.0f; /* 统一控制油门 [-0.5, 1.5] */
     float error_mA = 0.0f;
-    float alpha_p = 0.0f;
-    float alpha_s = 0.0f;
-    float theta = 0.0f;
+    float alpha_p = 0.0f, alpha_s = 0.0f;
+    float final_theta = 0.0f, final_fs = FS_MAX;
     power_dir_t current_dir = DIR_FORWARD;
 
     while(1)
@@ -271,9 +212,7 @@ static void PID_ctrl_routine(void *pvParameters)
         if(xQueueReceive(adc_queue, &buf_ptr, portMAX_DELAY) != pdTRUE)
             continue;
 
-        /* ------------------------------------------------------------
-         * 1. 处理上层命令（模式切换 / 目标电流更新）
-         * ------------------------------------------------------------ */
+        /* 1. 处理指令队列 */
         if(xQueueReceive(pid_ctrl_queue_mA, &queue_buf, 0) == pdPASS)
         {
             uint16_t recv_mode = (uint16_t)(queue_buf >> 16);
@@ -281,31 +220,24 @@ static void PID_ctrl_routine(void *pvParameters)
 
             if(recv_mode != mode && sw_state == SWITCH_STATE_IDLE)
             {
-                /* 需要切换模式：先拉停输出，经 SLEEP 过渡再启动 */
                 target_mode_req = recv_mode;
                 target_mA_buffer = recv_target;
                 mode = MODE_SLEEP;
                 sw_state = SWITCH_STATE_SLEEP_TRANSITION;
                 sw_timer = 0;
                 mode_tick = 0;
-                fs_output = FS_MAX;          /* 复位到最小功率频率 */
+                pid_output = 0.0f;
                 pid_reset_ctrl_block(pid_handle);
             }
             else if(sw_state == SWITCH_STATE_IDLE)
             {
                 target_mA_buffer = recv_target;
-                target_mA = recv_target;     /* 立即生效 */
             }
         }
 
-        /* ------------------------------------------------------------
-         * 2. ADC 数据处理
-         * ------------------------------------------------------------ */
         adc_data_process(buf_ptr);
 
-        /* ------------------------------------------------------------
-         * 3. 模式切换过渡计时
-         * ------------------------------------------------------------ */
+        /* 2. 模式切换计时 */
         if(sw_state == SWITCH_STATE_SLEEP_TRANSITION)
         {
             if(++sw_timer >= SWITCH_DELAY_CYCLES)
@@ -317,95 +249,86 @@ static void PID_ctrl_routine(void *pvParameters)
             }
         }
 
-        /* ------------------------------------------------------------
-         * 4. 计算电压增益 M
-         *    下限保护：防止除零和电压过低时 M 失真
-         * ------------------------------------------------------------ */
+        /* 3. 计算电压增益 M 与 桥内移相 alpha (效率环) */
         float v_high = (float)(now_high_voltage_mV < 8000 ? 8000 : now_high_voltage_mV);
         float v_low = (float)(now_low_voltage_mV < 2500 ? 2500 : now_low_voltage_mV);
         float M = TRANSFORMER_N * v_low / v_high;
 
-        /* ------------------------------------------------------------
-         * 5. 各工作模式逻辑
-         * ------------------------------------------------------------ */
+        if(M <= 1.0f)
+        {
+            if(M > 0.9f)
+                M = 0.9f;
+            alpha_s = 0.0f;
+            /* 桥内移相 alpha_p 负责匹配压差以消除环流: cos(alpha) = M */
+            alpha_p = acosf(fminf(1.0f, M));
+        }
+        else
+        {
+            if(M < 1.1f)
+                M = 1.1f;
+            alpha_p = 0.0f;
+            alpha_s = acosf(fminf(1.0f, 1.0f / M));
+        }
+
+        /* 4. 计算桥间移相前馈 theta_ff (基础挡位) */
+        float theta_ff = 0.0f;
+        if(M <= 1.0f)
+            theta_ff = asinf(sqrtf(fmaxf(0.0f, 1.0f - M)));
+        else
+            theta_ff = asinf(sqrtf(fmaxf(0.0f, 1.0f - 1.0f / M)));
+
+        /* 关键：给前馈角度一个“底薪”，防止 M=1 时角度过小导致 3A 输不出 */
+        theta_ff = fmaxf(theta_ff, THETA_FF_BASE);
+
+        /* 5. 模式特定逻辑 */
         switch(mode)
         {
-            /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-             * MODE_SLEEP：停机状态
-             * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
             case MODE_SLEEP:
                 if(mode_tick == 0)
                 {
                     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_ALL_OUTPUTS);
-                    HRTIM_Update_Timing(FS_MAX, 0.0f, 0.0f, 0.0f, DIR_FORWARD);
+                    HRTIM_Update_Timing(FS_MAX, 0, 0, 0, DIR_FORWARD);
                     mode_tick++;
                 }
-                continue; /* 不执行后续 PID / HRTIM 更新 */
+                continue;
 
-            /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-             * MODE_1TO2：高侧→低侧，全程恒流
-             *   外部电子负载 CV 钳位 Vb，无需控制恒压
-             *   传感器约定：now_low_current_mA > 0 表示电流流入低侧（充电）
-             * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
             case MODE_1TO2:
                 current_dir = DIR_FORWARD;
-
-                /*
-                 * 低压预充保护：Vb < 3.0 V 时限制为 500 mA，
-                 * 电压正常后恢复为用户设定值。
-                 * （即使外部电子负载钳压，过低电压下仍需限流保护）
-                 */
                 target_mA = (now_low_voltage_mV < 3000) ? 500 : target_mA_buffer;
-                if(target_mA < 100)
-                    target_mA = 100;
                 if(target_mA > 3000)
                     target_mA = 3000;
-
+                if(target_mA < 500)
+                    target_mA = 500;
                 error_mA = (float)target_mA - (float)now_low_current_mA;
-
                 if(mode_tick == 0)
                 {
-                    pid_update_parameters(pid_handle, &FM_PID_PARAM);
+                    pid_update_parameters(pid_handle, &HYBRID_PID_PARAM);
                     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                     mode_tick++;
                 }
                 break;
 
-            /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-             * MODE_2TO1：低侧→高侧，全程恒流
-             *   外部电子负载 CV 钳位 Va，无需控制恒压
-             *   传感器约定：反向充电时 now_high_current_mA < 0
-             *     → error = target + now_high_current_mA = target - |I_high|
-             * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
             case MODE_2TO1:
                 current_dir = DIR_REVERSE;
-
-                /* 高压预充保护：Va < 10.0 V 时限制为 100 mA */
                 target_mA = (now_high_voltage_mV < 10000) ? 100 : target_mA_buffer;
                 if(target_mA < 100)
                     target_mA = 100;
                 if(target_mA > 1000)
                     target_mA = 1000;
 
+                /* 反向：error = 目标 - |实际| */
                 error_mA = (float)target_mA + (float)now_high_current_mA;
-
                 if(mode_tick == 0)
                 {
-                    pid_update_parameters(pid_handle, &FM_PID_PARAM);
+                    pid_update_parameters(pid_handle, &HYBRID_PID_PARAM);
                     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                     mode_tick++;
                 }
                 break;
 
-            /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-             * MODE_AUTO：根据高侧电压自动判断方向（含滞回防抖）
-             *   滞回区间 11.0~11.5 V：保持上一次的方向和误差，避免频繁切换
-             * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
             case MODE_AUTO:
                 target_mA = target_mA_buffer;
-                if(target_mA < 500)
-                    target_mA = 500;
-
+                /* 滞回逻辑 */
                 if(now_high_voltage_mV <= 11000)
                 {
                     current_dir = DIR_REVERSE;
@@ -416,57 +339,59 @@ static void PID_ctrl_routine(void *pvParameters)
                     current_dir = DIR_FORWARD;
                     error_mA = (float)target_mA - (float)now_low_current_mA;
                 }
-                /* 11000~11500 mV：current_dir 和 error_mA 维持上次值（滞回） */
-
                 if(mode_tick == 0)
                 {
-                    /*
-                     * 首次进入 AUTO：根据当前电压确定初始方向，
-                     * 避免首拍在滞回区内 current_dir 为 DIR_FORWARD 默认值
-                     */
-                    if(now_high_voltage_mV < 11250)
-                    {
-                        current_dir = DIR_REVERSE;
-                        error_mA = (float)target_mA + (float)now_high_current_mA;
-                    }
-                    else
-                    {
-                        current_dir = DIR_FORWARD;
-                        error_mA = (float)target_mA - (float)now_low_current_mA;
-                    }
-                    pid_update_parameters(pid_handle, &FM_PID_PARAM);
+                    pid_update_parameters(pid_handle, &HYBRID_PID_PARAM);
                     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                     mode_tick++;
                 }
                 break;
-
             default:
                 continue;
         }
 
-        /* ------------------------------------------------------------
-         * 6. PID 计算 → 输出目标频率 fs_output
-         * ------------------------------------------------------------ */
-        pid_compute(pid_handle, error_mA, &fs_output);
+        /* 6. 统一油门 PID 计算与三段映射 */
+        pid_compute(pid_handle, error_mA, &pid_output);
 
-        /* ------------------------------------------------------------
-         * 7. 根据 M 计算 4-DOF 最优角度
-         *    ★ θ 仅由 M 决定，与 fs 无关 ★
-         * ------------------------------------------------------------ */
-        calc_4dof_angles(M, &alpha_p, &alpha_s, &theta);
+        /*
+         * 映射逻辑设计：
+         * [0.0, 1.0] 段：调频区。theta 固定为 theta_ff，fs 从 FS_MAX 降到 FS_MIN
+         * [-0.5, 0.0] 段：降相区（极轻载）。fs 固定为 FS_MAX，theta 从 theta_ff 线性降向 0
+         * [1.0, 1.5]  段：升相区（超重载）。fs 固定为 FS_MIN，theta 从 theta_ff 线性升向 THETA_MAX
+         */
+        if(pid_output < 0.0f)
+        {
+            final_fs = FS_MAX;
+            /* 在 0.0 到 -0.5 之间，角度从 theta_ff 降到 0 */
+            final_theta = theta_ff * (1.0f + pid_output * 2.0f);
+        }
+        else if(pid_output <= 1.0f)
+        {
+            final_theta = theta_ff;
+            /* 在 0.0 到 1.0 之间，频率从 FS_MAX 降到 FS_MIN */
+            final_fs = FS_MAX - (pid_output * (FS_MAX - FS_MIN));
+        }
+        else
+        {
+            final_fs = FS_MIN;
+            /* 在 1.0 到 1.5 之间，角度从 theta_ff 升向上限 */
+            final_theta = theta_ff + (pid_output - 1.0f) * 2.0f * (THETA_MAX - theta_ff);
+        }
 
-        /* ------------------------------------------------------------
-         * 8. 更新 HRTIM 硬件
-         * ------------------------------------------------------------ */
-        HRTIM_Update_Timing(fs_output, alpha_p, alpha_s, theta, current_dir);
+        /* 安全二次限幅 */
+        if(final_theta < THETA_MIN)
+            final_theta = THETA_MIN;
+        if(final_theta > THETA_MAX)
+            final_theta = THETA_MAX;
 
-        /* ------------------------------------------------------------
-         * 9. 调试日志（每 100 个 ADC 周期打印一次）
-         * ------------------------------------------------------------ */
+        /* 7. 更新硬件 */
+        HRTIM_Update_Timing(final_fs, alpha_p, alpha_s, final_theta, current_dir);
+
+        /* 8. 调试打印 */
         if(++log_tick >= 100)
         {
-            LOGI("PID", "M=%.3f ap=%.3f as=%.3f th=%.3f err=%.1f fs=%.0f", M, alpha_p, alpha_s, theta, error_mA,
-                 fs_output);
+            LOGI("PID", "M=%.2f ap=%.2f th=%.2f fs=%.0f p_out=%.2f err=%.0f",
+                 M, alpha_p+alpha_s, final_theta, final_fs, pid_output, error_mA);
             log_tick = 0;
         }
     }
@@ -485,7 +410,7 @@ void pid_set_current(uint32_t mA)
 void pid_ctrl_init(void)
 {
     pid_ctrl_config_t cfg = {
-        .init_param = FM_PID_PARAM,
+        .init_param = HYBRID_PID_PARAM,
     };
     pid_new_control_block(&cfg, &pid_handle);
     pid_ctrl_queue_mA = xQueueCreate(6, sizeof(uint32_t));
