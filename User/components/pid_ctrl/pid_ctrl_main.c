@@ -273,6 +273,10 @@ static void PID_ctrl_routine(void *pvParameters)
 
             // 计算当前的电压增益 M
             float M = TRANSFORMER_N * v_low / v_high;
+            if(M < 0.3f)
+                M = 0.3f;
+            if(M > 1.8f)
+                M = 1.8f;
 
             if(M <= 1.0f)
             {
@@ -307,7 +311,7 @@ static void PID_ctrl_routine(void *pvParameters)
                     {
                         submode = 1;
                         target_current_mA = 500;
-                        current_freq = 135000.0f;
+                        current_freq = 160000.0f;
                     }
 
                     else
@@ -318,7 +322,7 @@ static void PID_ctrl_routine(void *pvParameters)
                         {
                             target_current_mA = 500;
                         }
-                        current_freq = NOMINAL_FREQ + (3100 - target_current_mA) * 15.0f;
+                        current_freq = NOMINAL_FREQ + (3000 - target_current_mA) * 20.0f;
                         // alpha_p = 0.0f;
                         // alpha_s = 0.0f;
                     }
@@ -332,17 +336,17 @@ static void PID_ctrl_routine(void *pvParameters)
                     if(mode_tick_count == 0)
                     {
                         // SPS 模式下，移相角越大功率越大，所以 Kp 为正
-                        pid_ctrl_parameter_t sps_param = {
-                            .kp           = 0.0001f,     // SPS 角度很敏感，Kp 从小开始
-                            .ki           = 0.00001f,
-                            .kd           = 0.00001f,
-                            .max_output   = THETA_MAX_RAD,
-                            .min_output   = THETA_MIN_RAD,
-                            .max_integral = 100.0f,
-                            .min_integral = -100.0f,
-                            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
-                        };
-                        pid_update_parameters(pid_handle, &sps_param);
+                        // pid_ctrl_parameter_t sps_param = {
+                        //     .kp           = 0.0015f,     // SPS 角度很敏感，Kp 从小开始
+                        //     .ki           = 0.00001f,
+                        //     .kd           = 0.0001f,
+                        //     .max_output   = THETA_MAX_RAD,
+                        //     .min_output   = THETA_MIN_RAD,
+                        //     .max_integral = 0.001f,
+                        //     .min_integral = -0.001f,
+                        //     .cal_type     = PID_CAL_TYPE_INCREMENTAL,
+                        // };
+                        // pid_update_parameters(pid_handle, &sps_param);
                         HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                         mode_tick_count++;
                     }
@@ -378,17 +382,17 @@ static void PID_ctrl_routine(void *pvParameters)
 
                     if(mode_tick_count == 0)
                     {
-                        pid_ctrl_parameter_t sps_param = {
-                            .kp           = 0.0001f,
-                            .ki           = 0.00001f,
-                            .kd           = 0.00001f,
-                            .max_output   = THETA_MAX_RAD,
-                            .min_output   = 0.01f,
-                            .max_integral = 100.0f,
-                            .min_integral = -100.0f,
-                            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
-                        };
-                        pid_update_parameters(pid_handle, &sps_param);
+                        // pid_ctrl_parameter_t sps_param = {
+                        //     .kp           = 0.0015f,     // SPS 角度很敏感，Kp 从小开始
+                        //     .ki           = 0.00001f,
+                        //     .kd           = 0.0001f,
+                        //     .max_output   = THETA_MAX_RAD,
+                        //     .min_output   = THETA_MIN_RAD,
+                        //     .max_integral = 0.001f,
+                        //     .min_integral = -0.001f,
+                        //     .cal_type     = PID_CAL_TYPE_INCREMENTAL,
+                        // };
+                        // pid_update_parameters(pid_handle, &sps_param);
                         HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                         mode_tick_count++;
                     }
@@ -411,17 +415,17 @@ static void PID_ctrl_routine(void *pvParameters)
                     }
                     if(mode_tick_count == 0)
                     {
-                        pid_ctrl_parameter_t sps_param = {
-                            .kp           = 0.0001f,
-                            .ki           = 0.00001f,
-                            .kd           = 0.00001f,
-                            .max_output   = THETA_MAX_RAD,
-                            .min_output   = 0.01f,
-                            .max_integral = 100.0f,
-                            .min_integral = -100.0f,
-                            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
-                        };
-                        pid_update_parameters(pid_handle, &sps_param);
+                        // pid_ctrl_parameter_t sps_param = {
+                        //     .kp           = 0.0015f,     // SPS 角度很敏感，Kp 从小开始
+                        //     .ki           = 0.00001f,
+                        //     .kd           = 0.0001f,
+                        //     .max_output   = THETA_MAX_RAD,
+                        //     .min_output   = THETA_MIN_RAD,
+                        //     .max_integral = 0.001f,
+                        //     .min_integral = -0.001f,
+                        //     .cal_type     = PID_CAL_TYPE_INCREMENTAL,
+                        // };
+                        // pid_update_parameters(pid_handle, &sps_param);
                         HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_ALL_OUTPUTS);
                         mode_tick_count++;
                     }
@@ -457,14 +461,14 @@ void pid_ctrl_init(void)
 {
     pid_ctrl_config_t pid_cfg = {
         .init_param = {
-            .kp           = -10.0f,
-            .ki           = -1.0f,
-            .kd           = 0.0f,
-            .max_output   = FS_MAX,
-            .min_output   = FS_MIN,
-            .max_integral = 30000.0f,
-            .min_integral = -30000.0f,
-            .cal_type     = PID_CAL_TYPE_POSITIONAL,
+            .kp           = 0.0015f,     // SPS 角度很敏感，Kp 从小开始
+            .ki           = 0.00001f,
+            .kd           = 0.0001f,
+            .max_output   = THETA_MAX_RAD,
+            .min_output   = THETA_MIN_RAD,
+            .max_integral = 0.001f,
+            .min_integral = -0.001f,
+            .cal_type     = PID_CAL_TYPE_INCREMENTAL,
         }
     };
     pid_new_control_block(&pid_cfg, &pid_handle);
