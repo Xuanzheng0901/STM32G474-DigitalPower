@@ -298,6 +298,7 @@ static void PID_ctrl_routine(void *pvParameters)
             switch(mode)
             {
                 case MODE_SLEEP:
+                    submode = 0;
                     if(mode_tick_count == 0)
                     {
                         HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_ALL_OUTPUTS);

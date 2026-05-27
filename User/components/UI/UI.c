@@ -30,8 +30,9 @@ static lv_style_t style_spinbox_cursor;
 static lv_style_t style_spinbox_cursor_edited;
 
 static char value_buf[2][3][32] = {{"10.00", "1.00", "10.00"}, {"15.00", "2.00", "30.00"}};
+static const char *status_buf[] = {"-", "预充电", "可调恒流", "反向充电", "正向放电"};
 static const char *mode_text[] = {"-", "→", "←", "↔", NULL};
-static char status_buf[16] = "-";
+// static char status_buf[16] = "-";
 mode_t current_mode = MODE_1TO2;
 
 static void init_spinbox_style(void)
@@ -106,6 +107,7 @@ static void value_update_task(void *arg)
         uint16_t status = get_pid_value(4);
         uint8_t mode = status & 0xF;
         uint8_t submode = status >> 8;
+        uint8_t status_index = 0;
 
         snprintf(value_buf[0][0], 6, "%5.2f", high_voltage);
         snprintf(value_buf[0][1], 6, "%5.2f", high_current);
@@ -115,8 +117,9 @@ static void value_update_task(void *arg)
         snprintf(value_buf[1][1], 6, "%5.2f", low_current);
         snprintf(value_buf[1][2], 6, "%5.2f", low_voltage * low_current);
 
-        if(mode != MODE_AUTO)
-            snprintf(status_buf, 13, (submode == 0 || mode == MODE_SLEEP) ? "-" : (submode == 1 ? "预充电" : "可调恒流"));
+        status_index = submode;
+        if(mode == MODE_AUTO)
+            status_index += 2;
 
         if(lvgl_port_lock(portMAX_DELAY))
         {
@@ -128,7 +131,7 @@ static void value_update_task(void *arg)
             lv_label_set_text_static(current_label2, value_buf[1][1]);
             lv_label_set_text_static(power_value_label2, value_buf[1][2]);
 
-            lv_label_set_text_static(status_label, status_buf);
+            lv_label_set_text_static(status_label, status_buf[status_index]);
             lvgl_port_unlock();
         }
     }
@@ -274,7 +277,7 @@ static void home_page_init(void)
         lv_obj_align(power_value_label2, LV_ALIGN_TOP_LEFT, 96, 48);
 
         status_label = lv_label_create(lv_screen_active());
-        lv_label_set_text_static(status_label, status_buf);
+        lv_label_set_text_static(status_label, status_buf[0]);
         lv_obj_set_width(status_label, 48);
         lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(status_label, LV_ALIGN_TOP_LEFT, 64, 96);
