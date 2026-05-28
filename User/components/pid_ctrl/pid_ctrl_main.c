@@ -418,13 +418,13 @@ static void PID_ctrl_routine(void *pvParameters)
                     if(mode_tick_count == 0)
                     {
                         pid_ctrl_parameter_t sps_param = {
-                            .kp           = 0.0015f,     // SPS 角度很敏感，Kp 从小开始
-                            .ki           = 0.000005f,
-                            .kd           = 0.0001f,
+                            .kp           = 0.001f,     // SPS 角度很敏感，Kp 从小开始
+                            .ki           = 0.0001f,
+                            .kd           = 0.00001f,
                             .max_output   = THETA_MAX_RAD,
                             .min_output   = THETA_MIN_RAD,
-                            .max_integral = 0.001f,
-                            .min_integral = -0.001f,
+                            .max_integral = 0.01f,
+                            .min_integral = -0.01f,
                             .cal_type     = PID_CAL_TYPE_INCREMENTAL,
                         };
                         pid_update_parameters(pid_handle, &sps_param);
