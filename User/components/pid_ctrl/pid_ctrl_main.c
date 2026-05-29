@@ -324,14 +324,15 @@ static void PID_ctrl_routine(void *pvParameters)
                             target_current_mA = 500;
                         }
                         current_freq = NOMINAL_FREQ + (3000 - target_current_mA) * 20.0f;
-                        // alpha_p = 0.0f;
-                        // alpha_s = 0.0f;
+                        if(now_low_voltage_mV >= 4190)
+                        {
+                            submode = 3;
+                        }
+                    } {
+                        float error_cc = (float)target_current_mA - now_low_current_mA;
+                        float error_cv = (4200.0f - now_low_voltage_mV) * 1.0f;
+                        error_mA = error_cc < error_cv ? error_cc : error_cv;
                     }
-                    // alpha_p = 0.0f;
-                    // alpha_s = 0.0f;
-
-
-                    error_mA = (float)target_current_mA - now_low_current_mA;
                     current_dir = DIR_FORWARD;
 
                     if(mode_tick_count == 0)
@@ -374,11 +375,15 @@ static void PID_ctrl_routine(void *pvParameters)
                             target_current_mA = 1000;
                         }
                         current_freq = NOMINAL_FREQ + (1000 - target_current_mA) * 40.0f;
+                        if(now_high_voltage_mV > 14800)
+                        {
+                            submode = 3;
+                        }
+                    } {
+                        float error_cc = (float)target_current_mA + now_high_current_mA;
+                        float error_cv = (15000.0f - now_high_voltage_mV) * 5.0f;
+                        error_mA = error_cc < error_cv ? error_cc : error_cv;
                     }
-                    // alpha_s = 0.0f;
-                    // alpha_p = 0.0f;
-
-                    error_mA = (float)target_current_mA + now_high_current_mA;
                     current_dir = DIR_REVERSE;
 
                     if(mode_tick_count == 0)
