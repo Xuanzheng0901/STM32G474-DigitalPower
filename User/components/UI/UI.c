@@ -30,7 +30,10 @@ static lv_style_t style_spinbox_cursor;
 static lv_style_t style_spinbox_cursor_edited;
 
 static char value_buf[2][3][32] = {{"10.00", "1.00", "10.00"}, {"15.00", "2.00", "30.00"}};
-static const char *status_buf[] = {"-", "预充电", "可调恒流", "反向充电", "正向放电"};
+static const char *status_buf[][] = {
+    {"-", "预充电", "可调恒流", "恒压"},
+    {"反向充电", "正向放电"}
+};
 static const char *mode_text[] = {"-", "→", "←", "↔", NULL};
 // static char status_buf[16] = "-";
 mode_t current_mode = MODE_1TO2;
@@ -117,9 +120,9 @@ static void value_update_task(void *arg)
         snprintf(value_buf[1][1], 6, "%5.2f", low_current);
         snprintf(value_buf[1][2], 6, "%5.2f", low_voltage * low_current);
 
-        status_index = submode;
+        status_index = 0;
         if(mode == MODE_AUTO)
-            status_index += 2;
+            status_index = 1;
 
         if(lvgl_port_lock(portMAX_DELAY))
         {
@@ -131,7 +134,7 @@ static void value_update_task(void *arg)
             lv_label_set_text_static(current_label2, value_buf[1][1]);
             lv_label_set_text_static(power_value_label2, value_buf[1][2]);
 
-            lv_label_set_text_static(status_label, status_buf[status_index]);
+            lv_label_set_text_static(status_label, status_buf[status_index][submode]);
             lvgl_port_unlock();
         }
     }
